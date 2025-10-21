@@ -27,67 +27,89 @@ void printMenu() {
 
 vector<Point2f> detectHoles(const Mat& frame, int iLowV, int iHighV)
 {
-	vector<Point2f> holeCenters;
+    vector<Point2f> holeCenters;
 
-	// Convert to HSV
-	Mat imgHSV;
-	cvtColor(frame, imgHSV, COLOR_BGR2HSV);
+    // --- Convert to HSV ---
+    Mat imgHSV;
+    cvtColor(frame, imgHSV, COLOR_BGR2HSV);
 
-	// We only care about brightness (Value channel)
-	vector<Mat> hsvChannels;
-	split(imgHSV, hsvChannels);
-	Mat V = hsvChannels[2];
+    vector<Mat> hsvChannels;
+    split(imgHSV, hsvChannels);
+    Mat V = hsvChannels[2];
 
-	// Threshold using the Control window's Value range
-	Mat mask;
-	inRange(V, Scalar(iLowV), Scalar(iHighV), mask);
+    // --- Threshold based on Value range ---
+    Mat mask;
+    inRange(V, Scalar(iLowV), Scalar(iHighV), mask);
 
-	// The mask should highlight the darker region (board)
-	// But we want to find the WHITE holes inside it → invert it
-	bitwise_not(mask, mask);
+    // --- Focus on region of interest (ROI) ---
+    // Adjust these values to crop to your known workspace area
+    Rect roi(frame.cols * 0.2, frame.rows * 0.2, frame.cols * 0.6, frame.rows * 0.6);
+    Mat croppedMask = mask(roi);
 
-	// Clean up noise
-	erode(mask, mask, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-	dilate(mask, mask, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-	dilate(mask, mask, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-	erode(mask, mask, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+    // --- Find contours in the dark region ---
+    vector<vector<Point>> contours;
+    findContours(croppedMask, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-	// Find contours of the white holes
-	vector<vector<Point>> contours;
-	findContours(mask, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+    // --- Keep only the largest contour (the board) ---
+    double maxArea = 0;
+    int maxIdx = -1;
+    for (int i = 0; i < contours.size(); i++) {
+        double a = contourArea(contours[i]);
+        if (a > maxArea) { maxArea = a; maxIdx = i; }
+    }
 
-	for (auto& contour : contours) {
-		double area = contourArea(contour);
-		if (area < 100 || area > 10000) continue; // filter noise
+    if (maxIdx == -1) return holeCenters; // no board found
 
-		Rect bbox = boundingRect(contour);
-		float aspect = (float)bbox.width / bbox.height;
-		if (aspect > 0.8 && aspect < 1.2) {
-			Moments m = moments(contour);
-			Point2f center(m.m10 / m.m00, m.m01 / m.m00);
-			holeCenters.push_back(center);
-		}
-	}
+    // --- Create mask of just the board ---
+    Mat boardMask = Mat::zeros(croppedMask.size(), CV_8UC1);
+    drawContours(boardMask, contours, maxIdx, Scalar(255), FILLED);
 
-	// Sort into a 3x3 order (top-left to bottom-right)
-	sort(holeCenters.begin(), holeCenters.end(), [](Point2f a, Point2f b) {
-		if (abs(a.y - b.y) > 20) return a.y < b.y;
-		return a.x < b.x;
-		});
+    // --- Invert to find white holes inside ---
+    bitwise_not(boardMask, boardMask);
 
-	// Visualize detection
-	Mat vis = frame.clone();
-	for (size_t i = 0; i < holeCenters.size(); ++i) {
-		circle(vis, holeCenters[i], 6, Scalar(0, 0, 255), -1);
-		putText(vis, to_string(i + 1), holeCenters[i] + Point2f(10, 0),
-			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-	}
+    // --- Morphological filtering to clean up ---
+    morphologyEx(boardMask, boardMask, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, Size(7, 7)));
+    morphologyEx(boardMask, boardMask, MORPH_CLOSE, getStructuringElement(MORPH_ELLIPSE, Size(7, 7)));
 
-	imshow("Detected Holes", vis);
-	imshow("Board Mask", mask);
+    // --- Find holes within board ---
+    vector<vector<Point>> holeContours;
+    findContours(boardMask, holeContours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-	return holeCenters;
+    for (auto& contour : holeContours) {
+        double area = contourArea(contour);
+        if (area < 200 || area > 5000) continue; // reject small shadows or large blobs
+
+        Rect bbox = boundingRect(contour);
+        float aspect = (float)bbox.width / bbox.height;
+        if (aspect < 0.8 || aspect > 1.2) continue; // keep near-squares only
+
+        Moments m = moments(contour);
+        Point2f center(m.m10 / m.m00, m.m01 / m.m00);
+        center.x += roi.x;
+        center.y += roi.y;
+        holeCenters.push_back(center);
+    }
+
+    // --- Enforce grid-like ordering ---
+    sort(holeCenters.begin(), holeCenters.end(), [](Point2f a, Point2f b) {
+        if (abs(a.y - b.y) > 25) return a.y < b.y;
+        return a.x < b.x;
+    });
+
+    // --- Visualize results ---
+    Mat vis = frame.clone();
+    for (size_t i = 0; i < holeCenters.size(); ++i) {
+        circle(vis, holeCenters[i], 6, Scalar(0, 0, 255), -1);
+        putText(vis, to_string(i + 1), holeCenters[i] + Point2f(10, 0),
+                FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    }
+
+    imshow("Board Mask", boardMask);
+    imshow("Detected Holes", vis);
+
+    return holeCenters;
 }
+
 
 int main(int argc, char* argv[])
 {
@@ -258,6 +280,36 @@ int main(int argc, char* argv[])
 			sp_blocking_write(port, &cmd, 1, 100);
 
 			switch (key) {
+			case 'c': // Recalibrate holes
+			{
+			    cout << "Recalibrating holes..." << endl;
+			
+			    // Capture a frame for calibration
+			    Mat calibrationFrame;
+			    cap >> calibrationFrame;
+			
+			    // Detect holes using current slider settings
+			    vector<Point2f> newCenters = detectHoles(calibrationFrame, iLowV, iHighV);
+			
+			    // Validation
+			    if (newCenters.size() == 9) {
+			        holeCenters = newCenters;
+			        cout << "Recalibration successful. Detected 9 holes." << endl;
+			
+			        // Print hole coordinates to console
+			        for (int i = 0; i < holeCenters.size(); ++i) {
+			            cout << "Hole " << i + 1 << ": (" << holeCenters[i].x 
+			                 << ", " << holeCenters[i].y << ")" << endl;
+			        }
+			    } 
+			    else {
+			        cout << "Recalibration failed — detected " 
+			             << newCenters.size() << " holes. Adjust V range and try again.\n";
+			    }
+			
+			    break;
+			}
+
 			case '1':  // Noughts & Crosses
 				cmd = 1;
 				cout << "Sent CMD 1 (Noughts & Crosses)\n";
