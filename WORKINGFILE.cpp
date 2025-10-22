@@ -18,6 +18,7 @@ struct Hole {
     Point2f center;
     double area;
     vector<Point> contour;
+    int colour;
 };
 
 void printMenu() {
@@ -33,36 +34,32 @@ void printMenu() {
 }
 
 // Function to detect color at specific coordinates and return integer code
-// Returns: 0 = no color, 1 = red, 2 = blue, 3 = green, 4 = yellow
+// Returns: 0 = no color, 1 = red, 2 = blue, 3 = green
 int detectColour(Mat& original, int x, int y) {
     // Convert to HSV for color detection
     Mat hsv;
     cvtColor(original, hsv, COLOR_BGR2HSV);
-    
+
     // Get the pixel value at the specified coordinates
     Vec3b pixel = hsv.at<Vec3b>(y, x);
-    
+
     int hue = pixel[0];
     int saturation = pixel[1];
     int value = pixel[2];
-    
+
     // Check for red (wraps around 0-10 and 170-180 in HSV)
-    if ((hue <= 10 || hue >= 170) && saturation > 100 && value > 50) {
+    if ((hue >= 150 || hue <= 180) && saturation > 100 && value > 50) {
         return 1; // Red
     }
     // Check for blue
-    else if (hue >= 100 && hue <= 130 && saturation > 100 && value > 50) {
+    else if (hue >= 75 && hue <= 130 && saturation > 100 && value > 50) {
         return 2; // Blue
     }
     // Check for green
     else if (hue >= 40 && hue <= 80 && saturation > 100 && value > 50) {
         return 3; // Green
     }
-    // Check for yellow
-    else if (hue >= 20 && hue <= 35 && saturation > 100 && value > 50) {
-        return 4; // Yellow
-    }
-    
+
     return 0; // No color detected
 }
 
@@ -168,6 +165,7 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
 
     return holes;
 }
+
 
 int main(int argc, char* argv[])
 {
@@ -276,6 +274,15 @@ int main(int argc, char* argv[])
         else {
             cout << "No board detected - adjust threshold values" << endl;
         }*/
+
+        // Check each matrix square for a colour
+        for (size_t i = 0; i < holes.size(); i++) {
+            int colourResult = detectColour(imgOriginal, holes[i].center.x, holes[i].center.y);
+            holes[i].colour = colourResult;
+        }
+        if (holes.size() > 0) {
+            cout << "H1: " << holes[0].colour << endl;
+        }
 
         // Display images
         imshow("Thresholded Image", imgThresholded);
