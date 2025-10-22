@@ -19,30 +19,35 @@ using namespace std::chrono;
 struct Hole {
     Point2f center;
     double area;
-    vector<Point> contour;
     int colour;
 };
 
-// Global variables for saving hole data
+// Global variables for saved hole data
 vector<Hole> savedHoles;
-bool holesSaved = false;
-steady_clock::time_point lastSaveTime;
+bool holesCalibrated = false;
+bool calibrationMode = true; // Start in calibration mode
 
 void printMenu() {
-    cout << "\n=== Robot Control Menu ===\n";
-    cout << "1. Noughts & Crosses\n";
-    cout << "2. Podium\n";
-    cout << "3. Stack the Blocks\n";
-    cout << "h. Home\n";
-    cout << "s. Stop\n";
-    cout << "r. Resume\n";
-    cout << "0. Quit\n";
-    cout << "Enter choice: \n";
+    cout << "\n=== Robot Control Menu ===" << endl;
+    cout << "CALIBRATION MODE: Place empty board and press 'c'" << endl;
+    cout << "1. Noughts & Crosses" << endl;
+    cout << "2. Podium" << endl;
+    cout << "3. Stack the Blocks" << endl;
+    cout << "c. Calibrate Holes (detect empty board)" << endl;
+    cout << "h. Home" << endl;
+    cout << "s. Stop" << endl;
+    cout << "r. Resume" << endl;
+    cout << "q. Quit" << endl;
+    cout << "Enter choice: ";
 }
 
 // Function to detect color at specific coordinates and return integer code
-// Returns: 0 = no color, 1 = red, 2 = blue, 3 = green
 int detectColour(Mat& original, int x, int y) {
+    // Check if coordinates are within image bounds
+    if (x < 0 || x >= original.cols || y < 0 || y >= original.rows) {
+        return 0;
+    }
+    
     // Convert to HSV for color detection
     Mat hsv;
     cvtColor(original, hsv, COLOR_BGR2HSV);
@@ -55,16 +60,20 @@ int detectColour(Mat& original, int x, int y) {
     int value = pixel[2];
 
     // Check for red (wraps around 0-10 and 170-180 in HSV)
-    if ((hue >= 150 || hue <= 180) && saturation > 100 && value > 50) {
+    if ((hue <= 10 || hue >= 170) && saturation > 100 && value > 50) {
         return 1; // Red
     }
     // Check for blue
-    else if (hue >= 75 && hue <= 130 && saturation > 100 && value > 50) {
+    else if (hue >= 100 && hue <= 130 && saturation > 100 && value > 50) {
         return 2; // Blue
     }
     // Check for green
     else if (hue >= 40 && hue <= 80 && saturation > 100 && value > 50) {
         return 3; // Green
+    }
+    // Check for yellow
+    else if (hue >= 20 && hue <= 35 && saturation > 100 && value > 50) {
+        return 4; // Yellow
     }
 
     return 0; // No color detected
@@ -89,25 +98,17 @@ vector<Point> detectBoard(Mat& thresholded, Mat& original) {
         }
     }
 
-    if (maxAreaIdx >= 0 && maxArea > 10000) { // Minimum area for board
+    if (maxAreaIdx >= 0 && maxArea > 10000) {
         // Draw the board contour
         drawContours(original, contours, maxAreaIdx, Scalar(0, 255, 255), 3);
-
-        // Calculate and display board center
-        Moments m = moments(contours[maxAreaIdx]);
-        Point2f boardCenter(m.m10 / m.m00, m.m01 / m.m00);
-        circle(original, boardCenter, 8, Scalar(255, 255, 0), -1);
-        putText(original, "Board Center", Point(boardCenter.x + 10, boardCenter.y),
-            FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 0), 2);
-
         return contours[maxAreaIdx];
     }
 
-    return vector<Point>(); // Return empty if no board found
+    return vector<Point>();
 }
 
-// Function to detect holes within the board region
-vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
+// Function to detect holes within the board region during calibration
+vector<Hole> calibrateHoles(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
     vector<Hole> holes;
 
     if (boardContour.empty()) return holes;
@@ -149,32 +150,19 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
             }
 
             // Accept both circular and slightly elliptical shapes
-            // Circularity of 1.0 = perfect circle, ~0.7-0.8 for squares
             if (circularity > 0.5) {
                 Hole hole;
                 hole.center = center;
                 hole.area = area;
-                hole.contour = contours[i];
-                
-                // Detect color for this hole
-                hole.colour = detectColour(original, center.x, center.y);
-                
+                hole.colour = 0; // Default to no color during calibration
                 holes.push_back(hole);
 
-                // Draw the hole
+                // Draw the hole during calibration
                 drawContours(original, contours, i, Scalar(0, 255, 0), 2);
                 circle(original, center, 5, Scalar(0, 0, 255), -1);
 
-                // Label the hole with coordinates and color
-                string colorText;
-                switch (hole.colour) {
-                    case 1: colorText = "R"; break;
-                    case 2: colorText = "B"; break;
-                    case 3: colorText = "G"; break;
-                    default: colorText = "N"; break;
-                }
-                
-                string label = "H" + to_string(holes.size()) + " " + colorText + " (" +
+                // Label the hole
+                string label = "H" + to_string(holes.size()) + " (" +
                     to_string((int)center.x) + "," + to_string((int)center.y) + ")";
                 putText(original, label, Point(center.x + 10, center.y),
                     FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 0, 255), 1);
@@ -185,28 +173,69 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
     return holes;
 }
 
-// Function to save holes with timestamp
-void saveHoles(const vector<Hole>& holes) {
+// Function to save calibrated holes
+void saveCalibratedHoles(const vector<Hole>& holes) {
     savedHoles = holes;
-    holesSaved = true;
-    lastSaveTime = steady_clock::now();
+    holesCalibrated = true;
+    calibrationMode = false;
     
-    cout << "=== HOLES SAVED AT " << duration_cast<seconds>(lastSaveTime.time_since_epoch()).count() << "s ===" << endl;
+    cout << "=== CALIBRATION COMPLETE ===" << endl;
+    cout << "Saved " << savedHoles.size() << " holes:" << endl;
     for (size_t i = 0; i < savedHoles.size(); i++) {
-        string colorText;
-        switch (savedHoles[i].colour) {
-            case 1: colorText = "Red"; break;
-            case 2: colorText = "Blue"; break;
-            case 3: colorText = "Green"; break;
-            default: colorText = "None"; break;
-        }
-        
         cout << "Hole " << (i + 1) << ": X=" << savedHoles[i].center.x
              << ", Y=" << savedHoles[i].center.y
-             << ", Color=" << colorText
              << ", Area=" << savedHoles[i].area << endl;
     }
-    cout << "=== " << savedHoles.size() << " HOLES SAVED ===" << endl;
+    cout << "Now checking these coordinates for colors..." << endl;
+}
+
+// Function to check colors at saved hole coordinates
+void checkSavedHoleColors(Mat& original) {
+    if (!holesCalibrated || savedHoles.empty()) return;
+
+    for (size_t i = 0; i < savedHoles.size(); i++) {
+        int colorResult = detectColour(original, savedHoles[i].center.x, savedHoles[i].center.y);
+        savedHoles[i].colour = colorResult;
+
+        // Draw the saved hole with color coding
+        Scalar color;
+        string colorText;
+        switch (colorResult) {
+            case 1: color = Scalar(0, 0, 255); colorText = "R"; break; // Red
+            case 2: color = Scalar(255, 0, 0); colorText = "B"; break; // Blue
+            case 3: color = Scalar(0, 255, 0); colorText = "G"; break; // Green
+            case 4: color = Scalar(0, 255, 255); colorText = "Y"; break; // Yellow
+            default: color = Scalar(128, 128, 128); colorText = "N"; break; // None
+        }
+
+        // Draw filled circle for the hole
+        circle(original, savedHoles[i].center, 15, color, -1);
+        // Draw outline
+        circle(original, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
+        
+        // Label with hole number and color
+        string label = to_string(i + 1) + ":" + colorText;
+        putText(original, label, Point(savedHoles[i].center.x - 10, savedHoles[i].center.y + 5),
+                FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 2);
+    }
+
+    // Print color status to console occasionally
+    static int frameCount = 0;
+    if (frameCount++ % 30 == 0) { // Print every 30 frames
+        cout << "Current colors: ";
+        for (size_t i = 0; i < savedHoles.size(); i++) {
+            string colorText;
+            switch (savedHoles[i].colour) {
+                case 1: colorText = "R"; break;
+                case 2: colorText = "B"; break;
+                case 3: colorText = "G"; break;
+                case 4: colorText = "Y"; break;
+                default: colorText = "-"; break;
+            }
+            cout << (i + 1) << ":" << colorText << " ";
+        }
+        cout << endl;
+    }
 }
 
 int main(int argc, char* argv[])
@@ -226,26 +255,26 @@ int main(int argc, char* argv[])
     // ========= Serial Comms ===========================
     struct sp_port* port;
     int err;
-    char cmd;
+    char cmd = 0;
 
     // Set up port, check port usage
     if (argc < 2)
     {
-        fprintf(stderr, " Port use\n"); // Return error
+        fprintf(stderr, " Port use\n");
         exit(1);
     }
 
     // Get port name
     err = sp_get_port_by_name("COM3", &port);
     if (err == SP_OK)
-        err = sp_open(port, SP_MODE_WRITE); // Open port
+        err = sp_open(port, SP_MODE_WRITE);
     if (err != SP_OK)
     {
-        fprintf(stderr, " Can't open port %s\n", argv[1]); // Return error
+        fprintf(stderr, " Can't open port %s\n", argv[1]);
         exit(2);
     }
-    sp_set_baudrate(port, BAUD); // Set BAUD rate
-    sp_set_bits(port, 8); // Set num of bits
+    sp_set_baudrate(port, BAUD);
+    sp_set_bits(port, 8);
 
     // ========== COLOUR DETECTION ===================
     namedWindow("Control", WINDOW_AUTOSIZE);
@@ -255,8 +284,8 @@ int main(int argc, char* argv[])
     int iHighH = 179;
     int iLowS = 0;
     int iHighS = 255;
-    int iLowV = 0;    // Lower value for dark objects
-    int iHighV = 100; // Upper value for dark objects (adjust based on lighting)
+    int iLowV = 0;
+    int iHighV = 100;
 
     createTrackbar("LowH", "Control", &iLowH, 179);
     createTrackbar("HighH", "Control", &iHighH, 179);
@@ -265,16 +294,12 @@ int main(int argc, char* argv[])
     createTrackbar("LowV", "Control", &iLowV, 255);
     createTrackbar("HighV", "Control", &iHighV, 255);
 
-    // Initialize timing variables
-    lastSaveTime = steady_clock::now();
-    bool initialDelayPassed = false;
-
     // =========== MAIN LOOP ==============================
-    printMenu(); // Print Menu to console
+    printMenu();
 
     while (true) {
         Mat imgOriginal;
-        bool bSuccess = cap.read(imgOriginal); // read a new frame from video
+        bool bSuccess = cap.read(imgOriginal);
 
         if (!bSuccess) {
             cout << "Cannot read a frame from video stream" << endl;
@@ -295,28 +320,23 @@ int main(int argc, char* argv[])
         // Detect the largest dark object (board)
         vector<Point> boardContour = detectBoard(imgThresholded, imgOriginal);
 
-        // Detect holes within the board
-        vector<Hole> currentHoles = detectHolesInBoard(imgThresholded, imgOriginal, boardContour);
-
-        // Check if 2 seconds have passed since last save
-        auto currentTime = steady_clock::now();
-        auto timeSinceLastSave = duration_cast<milliseconds>(currentTime - lastSaveTime).count();
-
-        if (!holesSaved || timeSinceLastSave >= 2000) {
-            if (!currentHoles.empty()) {
-                saveHoles(currentHoles);
-            }
-        }
-
-        // Display saved holes status
-        if (holesSaved && !savedHoles.empty()) {
-            string statusText = "Using saved holes: " + to_string(savedHoles.size()) + " holes";
-            putText(imgOriginal, statusText, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
+        if (calibrationMode) {
+            // CALIBRATION MODE: Detect holes on empty board
+            vector<Hole> detectedHoles = calibrateHoles(imgThresholded, imgOriginal, boardContour);
             
-            // Draw saved holes in a different color to distinguish them
-            for (size_t i = 0; i < savedHoles.size(); i++) {
-                circle(imgOriginal, savedHoles[i].center, 8, Scalar(255, 255, 0), 2);
-            }
+            // Display calibration instructions
+            string instruction = "CALIBRATION: Place empty board and press 'c'";
+            putText(imgOriginal, instruction, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
+            putText(imgOriginal, "Detected holes: " + to_string(detectedHoles.size()), 
+                    Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
+            
+        } else {
+            // NORMAL MODE: Check colors at saved coordinates
+            checkSavedHoleColors(imgOriginal);
+            
+            // Display status
+            string status = "MONITORING: " + to_string(savedHoles.size()) + " holes";
+            putText(imgOriginal, status, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
         }
 
         // Display images
@@ -326,55 +346,60 @@ int main(int argc, char* argv[])
         char key = (char)waitKey(25);
 
         // Handle serial communication
-        sp_blocking_write(port, &cmd, 1, 100);
+        if (key == '1' || key == '2' || key == '3' || key == 'h' || key == 's' || key == 'r') {
+            sp_blocking_write(port, &key, 1, 100);
+        }
 
         switch (key) {
+        case 'c':  // Calibrate holes
+            if (calibrationMode && !boardContour.empty()) {
+                vector<Hole> detectedHoles = calibrateHoles(imgThresholded, imgOriginal, boardContour);
+                if (!detectedHoles.empty()) {
+                    saveCalibratedHoles(detectedHoles);
+                } else {
+                    cout << "No holes detected! Adjust threshold values." << endl;
+                }
+            } else if (!calibrationMode) {
+                cout << "Recalibrating..." << endl;
+                calibrationMode = true;
+                holesCalibrated = false;
+            }
+            break;
+
         case '1':  // Noughts & Crosses
             cmd = 1;
-            cout << "Sent CMD 1 (Noughts & Crosses)\n";
-            cout << "cmd = " << (int)cmd << "\n";
+            cout << "Sent CMD 1 (Noughts & Crosses)" << endl;
             printMenu();
             break;
 
         case '2':  // Podium
             cmd = 2;
-            cout << "Sent CMD 2 (Podium)\n";
-            cout << "cmd = " << (int)cmd << "\n";
+            cout << "Sent CMD 2 (Podium)" << endl;
             printMenu();
             break;
 
         case '3':  // Stack the Blocks
             cmd = 4;
-            cout << "Sent CMD 3 (Stack the Blocks)\n";
-            cout << "cmd = " << (int)cmd << "\n";
+            cout << "Sent CMD 3 (Stack the Blocks)" << endl;
             printMenu();
             break;
 
         case 'h':  // Home
             cmd = 8;
-            cout << "Sent CMD 4 (Home)\n";
-            cout << "cmd = " << (int)cmd << "\n";
+            cout << "Sent CMD 4 (Home)" << endl;
             printMenu();
             break;
 
         case 's':  // Stop
             cmd = 16;
-            cout << "STOP (bit4=1)\n";
-            cout << "cmd = " << (int)cmd << "\n";
+            cout << "STOP (bit4=1)" << endl;
             printMenu();
             break;
 
         case 'r':  // Resume
             cmd = 32;
-            cout << "RESUME (bit5=1)\n";
-            cout << "cmd = " << (int)cmd << "\n";
+            cout << "RESUME (bit5=1)" << endl;
             printMenu();
-            break;
-
-        case 'c':  // Manual capture - force save holes
-            if (!currentHoles.empty()) {
-                saveHoles(currentHoles);
-            }
             break;
 
         case 'q':
