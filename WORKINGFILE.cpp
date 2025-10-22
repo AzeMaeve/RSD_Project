@@ -32,6 +32,40 @@ void printMenu() {
     cout << "Enter choice: \n";
 }
 
+// Function to detect color at specific coordinates and return integer code
+// Returns: 0 = no color, 1 = red, 2 = blue, 3 = green, 4 = yellow
+int detectColour(Mat& original, int x, int y) {
+    // Convert to HSV for color detection
+    Mat hsv;
+    cvtColor(original, hsv, COLOR_BGR2HSV);
+    
+    // Get the pixel value at the specified coordinates
+    Vec3b pixel = hsv.at<Vec3b>(y, x);
+    
+    int hue = pixel[0];
+    int saturation = pixel[1];
+    int value = pixel[2];
+    
+    // Check for red (wraps around 0-10 and 170-180 in HSV)
+    if ((hue <= 10 || hue >= 170) && saturation > 100 && value > 50) {
+        return 1; // Red
+    }
+    // Check for blue
+    else if (hue >= 100 && hue <= 130 && saturation > 100 && value > 50) {
+        return 2; // Blue
+    }
+    // Check for green
+    else if (hue >= 40 && hue <= 80 && saturation > 100 && value > 50) {
+        return 3; // Green
+    }
+    // Check for yellow
+    else if (hue >= 20 && hue <= 35 && saturation > 100 && value > 50) {
+        return 4; // Yellow
+    }
+    
+    return 0; // No color detected
+}
+
 // Function to detect the largest dark object (board)
 vector<Point> detectBoard(Mat& thresholded, Mat& original) {
     vector<vector<Point>> contours;
