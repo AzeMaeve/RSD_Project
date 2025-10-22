@@ -5,6 +5,7 @@
 #define BAUD 9600
 
 #include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
 #include <iostream>
 #include <vector>
 #include <stdio.h>
@@ -26,12 +27,13 @@ void printMenu() {
 
 int main(int argc, char* argv[])
 {
-	/*Variables for camera function*/
+	// ========= Variables for camera function ==========
 	int n = 0;
 	char filename[200];
 	string window_name = "video | q or esc to quit";
 	Mat frame;
-	/*Setup camera and check for camera*/
+	
+	// ========= Camera Setup ===========================
 	namedWindow(window_name);
 	VideoCapture cap(0);
 	if (!cap.isOpened()) {
@@ -40,54 +42,114 @@ int main(int argc, char* argv[])
 
 	}
 
-	/*Variables for serial comms */
+	// ========= Serial Comms ===========================
 	struct sp_port* port;
 	int err;
 	int key = 0;
 	char cmd;
 
-	/* Set up and open the port */
-	/* check port usage */
+	// Set up port, check port usage
 	if (argc < 2)
 	{
-		/* return error */
-		fprintf(stderr, " Port use\n");
+		fprintf(stderr, " Port use\n"); // Return error
 		exit(1);
 	}
 
-	/* get port name */
+	// Get port name
 	err = sp_get_port_by_name("COM3", &port);
 	if (err == SP_OK)
-		/* open port */
-		err = sp_open(port, SP_MODE_WRITE);
+		err = sp_open(port, SP_MODE_WRITE); // Open port
 	if (err != SP_OK)
 	{
-		/* return error */
-		fprintf(stderr, " Can't open port %s\n", argv[1]);
+		fprintf(stderr, " Can't open port %s\n", argv[1]); // Return error
 		exit(2);
 	}
+	sp_set_baudrate(port, BAUD); // Set BAUD rate
+	sp_set_bits(port, 8); // Set num of bits
 
-	/* set Baud rate */
-	sp_set_baudrate(port, BAUD);
-	/* set the number of bits */
-	sp_set_bits(port, 8);
+	// ========== COLOUR DETECTION ===================
+	namedWindow("Control", CV_WINDOW_AUTOSIZE);
 
-	printMenu();
+	int iLowH = 0;
+ 	int iHighH = 179;
 
-	/* set up to exit when q key is entered */
+  	int iLowS = 0; 
+ 	int iHighS = 255;
+
+	int iLowV = 0;
+	int iHighV = 255;
+
+	// Create trackbars in "Control" window
+	cvCreateTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
+	cvCreateTrackbar("HighH", "Control", &iHighH, 179);
+	
+	cvCreateTrackbar("LowS", "Control", &iLowS, 255); //Saturation (0 - 255)
+	cvCreateTrackbar("HighS", "Control", &iHighS, 255);
+	
+	cvCreateTrackbar("LowV", "Control", &iLowV, 255); //Value (0 - 255)
+	cvCreateTrackbar("HighV", "Control", &iHighV, 255);
+
+    while (true)
+    {
+        Mat imgOriginal;
+
+        bool bSuccess = cap.read(imgOriginal); // read a new frame from video
+
+         if (!bSuccess) //if not success, break loop
+        {
+             cout << "Cannot read a frame from video stream" << endl;
+             break;
+        }
+
+    Mat imgHSV;
+
+	cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
+ 
+  	Mat imgThresholded;
+
+    inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
+      
+	//morphological opening (remove small objects from the foreground)
+	erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) );
+	dilate( imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) ); 
+
+	//morphological closing (fill small holes in the foreground)
+	dilate( imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) ); 
+	erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)) );
+	
+	imshow("Thresholded Image", imgThresholded); //show the thresholded image
+	imshow("Original", imgOriginal); //show the original image
+
+	// Calculate the moments of the thresholded image
+	Moments oMoments = moments(imgThresholded);
+	
+	double dM01 = oMoments.m01;
+	double dM10 = oMoments.m10;
+	double dArea = oMoments.m00;
+	
+	// if the area <= 10000, I consider that the there are no object in the image and it's because of the noise, the area is not zero 
+	if (dArea > 10000)
+	{
+		// Calculate the position of the object
+		int posX = dM10 / dArea;
+		int posY = dM01 / dArea;
+		// Print coordinates to console
+		cout << posX << ", " << posY;
+	}
+
+	// =========== MAIN LOOP ==============================
+	printMenu(); // Print Menu to console
+		
 	while (key != 'q') {
 		cap >> frame;
-		// if code does not work, uncomment and recomment
-		/*The code contained here reads and outputs a single pixel value at (10,15)*/
-		/*Vec3b intensity = frame.at<Vec3b>(10, 15);
-		int blue = intensity.val[0];
-		int green = intensity.val[1];
-		int red = intensity.val[2];
-		cout << "Intensity = " << endl << " " << blue << " " << green << " " << red << endl << endl;*/
-		/*End of modifying pixel values*/
+		/*Reads and outputs a single pixel value at (10,15)*/
+		// Vec3b intensity = frame.at<Vec3b>(10, 15);
+		// int blue = intensity.val[0];
+		// int green = intensity.val[1];
+		// int red = intensity.val[2];
+		// cout << "Intensity = " << endl << " " << blue << " " << green << " " << red << endl << endl;
 
-		/*The code contained here modifies the output pixel values*/
-			/* Modify the pixels of the RGB image */
+		/*Modify the pixels of the RGB image */
 		//for (int i = 150; i < frame.rows; i++)
 		//{
 		//	for (int j = 150; j < frame.cols; j++)
@@ -98,11 +160,9 @@ int main(int argc, char* argv[])
 		//		frame.at<Vec3b>(i, j)[2] = 0;
 		//	}
 		//}
-		/*End of modifying pixel values*/
 
 		imshow(window_name, frame);
 		char key = (char)waitKey(25);
-		/* write the number "cmd" to the port */
 		sp_blocking_write(port, &cmd, 1, 100);
 
 		switch (key) {
@@ -161,7 +221,7 @@ int main(int argc, char* argv[])
 			break;
 		}
 	}
-	/* close the port */
 	sp_close(port);
 	return 0;
+
 }
