@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libserialport.h>
+#include <chrono>
 
 #define BAUD 9600
 
@@ -12,13 +13,20 @@
 
 using namespace cv;
 using namespace std;
+using namespace std::chrono;
 
 // Structure to store hole information
 struct Hole {
     Point2f center;
     double area;
     vector<Point> contour;
+    int colour;
 };
+
+// Global variables for saving hole data
+vector<Hole> savedHoles;
+bool holesSaved = false;
+steady_clock::time_point lastSaveTime;
 
 void printMenu() {
     cout << "\n=== Robot Control Menu ===\n";
@@ -33,36 +41,32 @@ void printMenu() {
 }
 
 // Function to detect color at specific coordinates and return integer code
-// Returns: 0 = no color, 1 = red, 2 = blue, 3 = green, 4 = yellow
+// Returns: 0 = no color, 1 = red, 2 = blue, 3 = green
 int detectColour(Mat& original, int x, int y) {
     // Convert to HSV for color detection
     Mat hsv;
     cvtColor(original, hsv, COLOR_BGR2HSV);
-    
+
     // Get the pixel value at the specified coordinates
     Vec3b pixel = hsv.at<Vec3b>(y, x);
-    
+
     int hue = pixel[0];
     int saturation = pixel[1];
     int value = pixel[2];
-    
+
     // Check for red (wraps around 0-10 and 170-180 in HSV)
-    if ((hue <= 10 || hue >= 170) && saturation > 100 && value > 50) {
+    if ((hue >= 150 || hue <= 180) && saturation > 100 && value > 50) {
         return 1; // Red
     }
     // Check for blue
-    else if (hue >= 100 && hue <= 130 && saturation > 100 && value > 50) {
+    else if (hue >= 75 && hue <= 130 && saturation > 100 && value > 50) {
         return 2; // Blue
     }
     // Check for green
     else if (hue >= 40 && hue <= 80 && saturation > 100 && value > 50) {
         return 3; // Green
     }
-    // Check for yellow
-    else if (hue >= 20 && hue <= 35 && saturation > 100 && value > 50) {
-        return 4; // Yellow
-    }
-    
+
     return 0; // No color detected
 }
 
@@ -151,14 +155,26 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
                 hole.center = center;
                 hole.area = area;
                 hole.contour = contours[i];
+                
+                // Detect color for this hole
+                hole.colour = detectColour(original, center.x, center.y);
+                
                 holes.push_back(hole);
 
                 // Draw the hole
                 drawContours(original, contours, i, Scalar(0, 255, 0), 2);
                 circle(original, center, 5, Scalar(0, 0, 255), -1);
 
-                // Label the hole
-                string label = "H" + to_string(holes.size()) + " (" +
+                // Label the hole with coordinates and color
+                string colorText;
+                switch (hole.colour) {
+                    case 1: colorText = "R"; break;
+                    case 2: colorText = "B"; break;
+                    case 3: colorText = "G"; break;
+                    default: colorText = "N"; break;
+                }
+                
+                string label = "H" + to_string(holes.size()) + " " + colorText + " (" +
                     to_string((int)center.x) + "," + to_string((int)center.y) + ")";
                 putText(original, label, Point(center.x + 10, center.y),
                     FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 0, 255), 1);
@@ -167,6 +183,30 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
     }
 
     return holes;
+}
+
+// Function to save holes with timestamp
+void saveHoles(const vector<Hole>& holes) {
+    savedHoles = holes;
+    holesSaved = true;
+    lastSaveTime = steady_clock::now();
+    
+    cout << "=== HOLES SAVED AT " << duration_cast<seconds>(lastSaveTime.time_since_epoch()).count() << "s ===" << endl;
+    for (size_t i = 0; i < savedHoles.size(); i++) {
+        string colorText;
+        switch (savedHoles[i].colour) {
+            case 1: colorText = "Red"; break;
+            case 2: colorText = "Blue"; break;
+            case 3: colorText = "Green"; break;
+            default: colorText = "None"; break;
+        }
+        
+        cout << "Hole " << (i + 1) << ": X=" << savedHoles[i].center.x
+             << ", Y=" << savedHoles[i].center.y
+             << ", Color=" << colorText
+             << ", Area=" << savedHoles[i].area << endl;
+    }
+    cout << "=== " << savedHoles.size() << " HOLES SAVED ===" << endl;
 }
 
 int main(int argc, char* argv[])
@@ -225,6 +265,10 @@ int main(int argc, char* argv[])
     createTrackbar("LowV", "Control", &iLowV, 255);
     createTrackbar("HighV", "Control", &iHighV, 255);
 
+    // Initialize timing variables
+    lastSaveTime = steady_clock::now();
+    bool initialDelayPassed = false;
+
     // =========== MAIN LOOP ==============================
     printMenu(); // Print Menu to console
 
@@ -252,30 +296,28 @@ int main(int argc, char* argv[])
         vector<Point> boardContour = detectBoard(imgThresholded, imgOriginal);
 
         // Detect holes within the board
-        vector<Hole> holes = detectHolesInBoard(imgThresholded, imgOriginal, boardContour);
+        vector<Hole> currentHoles = detectHolesInBoard(imgThresholded, imgOriginal, boardContour);
 
-        // Print results to console
-        /*if (!boardContour.empty()) {
-            Moments m = moments(boardContour);
-            Point2f boardCenter(m.m10 / m.m00, m.m01 / m.m00);
-            cout << "Board detected - Center: (" << boardCenter.x << ", " << boardCenter.y << ")" << endl;
+        // Check if 2 seconds have passed since last save
+        auto currentTime = steady_clock::now();
+        auto timeSinceLastSave = duration_cast<milliseconds>(currentTime - lastSaveTime).count();
 
-            if (!holes.empty()) {
-                cout << "Detected " << holes.size() << " holes:" << endl;
-                for (size_t i = 0; i < holes.size(); i++) {
-                    cout << "  Hole " << (i + 1) << ": X=" << holes[i].center.x
-                        << ", Y=" << holes[i].center.y
-                        << ", Area=" << holes[i].area << endl;
-                }
+        if (!holesSaved || timeSinceLastSave >= 2000) {
+            if (!currentHoles.empty()) {
+                saveHoles(currentHoles);
             }
-            else {
-                cout << "No holes detected in board" << endl;
-            }
-            cout << "---" << endl;
         }
-        else {
-            cout << "No board detected - adjust threshold values" << endl;
-        }*/
+
+        // Display saved holes status
+        if (holesSaved && !savedHoles.empty()) {
+            string statusText = "Using saved holes: " + to_string(savedHoles.size()) + " holes";
+            putText(imgOriginal, statusText, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
+            
+            // Draw saved holes in a different color to distinguish them
+            for (size_t i = 0; i < savedHoles.size(); i++) {
+                circle(imgOriginal, savedHoles[i].center, 8, Scalar(255, 255, 0), 2);
+            }
+        }
 
         // Display images
         imshow("Thresholded Image", imgThresholded);
@@ -327,6 +369,12 @@ int main(int argc, char* argv[])
             cout << "RESUME (bit5=1)\n";
             cout << "cmd = " << (int)cmd << "\n";
             printMenu();
+            break;
+
+        case 'c':  // Manual capture - force save holes
+            if (!currentHoles.empty()) {
+                saveHoles(currentHoles);
+            }
             break;
 
         case 'q':
