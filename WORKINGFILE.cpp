@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libserialport.h>
-#include <chrono>
 
 #define BAUD 9600
 
@@ -13,7 +12,6 @@
 
 using namespace cv;
 using namespace std;
-using namespace std::chrono;
 
 // Structure to store hole information
 struct Hole {
@@ -22,18 +20,20 @@ struct Hole {
     int colour;
 };
 
-// Global variables for saved hole data
+// Global variables
 vector<Hole> savedHoles;
 bool holesCalibrated = false;
-bool calibrationMode = true; // Start in calibration mode
+Mat emptyFrame;
+bool emptyFrameCaptured = false;
 
 void printMenu() {
     cout << "\n=== Robot Control Menu ===" << endl;
-    cout << "CALIBRATION MODE: Place empty board and press 'c'" << endl;
-    cout << "1. Noughts & Crosses" << endl;
-    cout << "2. Podium" << endl;
-    cout << "3. Stack the Blocks" << endl;
-    cout << "c. Calibrate Holes (detect empty board)" << endl;
+    cout << "1. Capture Empty Frame & Detect Holes" << endl;
+    cout << "2. Check Colors at Hole Positions" << endl;
+    cout << "3. Print Hole Coordinates" << endl;
+    cout << "4. Noughts & Crosses" << endl;
+    cout << "5. Podium" << endl;
+    cout << "6. Stack the Blocks" << endl;
     cout << "h. Home" << endl;
     cout << "s. Stop" << endl;
     cout << "r. Resume" << endl;
@@ -107,8 +107,8 @@ vector<Point> detectBoard(Mat& thresholded, Mat& original) {
     return vector<Point>();
 }
 
-// Function to detect holes within the board region during calibration
-vector<Hole> calibrateHoles(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
+// Function to detect holes within the board region
+vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
     vector<Hole> holes;
 
     if (boardContour.empty()) return holes;
@@ -154,18 +154,8 @@ vector<Hole> calibrateHoles(Mat& thresholded, Mat& original, const vector<Point>
                 Hole hole;
                 hole.center = center;
                 hole.area = area;
-                hole.colour = 0; // Default to no color during calibration
+                hole.colour = 0; // Default to no color
                 holes.push_back(hole);
-
-                // Draw the hole during calibration
-                drawContours(original, contours, i, Scalar(0, 255, 0), 2);
-                circle(original, center, 5, Scalar(0, 0, 255), -1);
-
-                // Label the hole
-                string label = "H" + to_string(holes.size()) + " (" +
-                    to_string((int)center.x) + "," + to_string((int)center.y) + ")";
-                putText(original, label, Point(center.x + 10, center.y),
-                    FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 0, 255), 1);
             }
         }
     }
@@ -173,82 +163,137 @@ vector<Hole> calibrateHoles(Mat& thresholded, Mat& original, const vector<Point>
     return holes;
 }
 
-// Function to save calibrated holes
-void saveCalibratedHoles(const vector<Hole>& holes) {
-    savedHoles = holes;
-    holesCalibrated = true;
-    calibrationMode = false;
-    
-    cout << "=== CALIBRATION COMPLETE ===" << endl;
-    cout << "Saved " << savedHoles.size() << " holes:" << endl;
-    for (size_t i = 0; i < savedHoles.size(); i++) {
-        cout << "Hole " << (i + 1) << ": X=" << savedHoles[i].center.x
-             << ", Y=" << savedHoles[i].center.y
-             << ", Area=" << savedHoles[i].area << endl;
+// Function to capture and process empty frame
+bool captureEmptyFrame(VideoCapture& cap) {
+    Mat frame;
+    if (!cap.read(frame)) {
+        cout << "Cannot read frame from camera" << endl;
+        return false;
     }
-    cout << "Now checking these coordinates for colors..." << endl;
+    
+    emptyFrame = frame.clone();
+    emptyFrameCaptured = true;
+    
+    cout << "Empty frame captured! Processing holes..." << endl;
+    
+    // Process the empty frame to detect holes
+    Mat imgHSV;
+    cvtColor(emptyFrame, imgHSV, COLOR_BGR2HSV);
+
+    // Threshold values for dark board detection
+    Mat imgThresholded;
+    inRange(imgHSV, Scalar(0, 0, 0), Scalar(179, 255, 100), imgThresholded);
+
+    // Morphological operations to clean up the image
+    Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+    morphologyEx(imgThresholded, imgThresholded, MORPH_CLOSE, kernel);
+    morphologyEx(imgThresholded, imgThresholded, MORPH_OPEN, kernel);
+
+    // Detect board and holes
+    vector<Point> boardContour = detectBoard(imgThresholded, emptyFrame);
+    savedHoles = detectHolesInBoard(imgThresholded, emptyFrame, boardContour);
+    
+    if (!savedHoles.empty()) {
+        holesCalibrated = true;
+        cout << "Successfully detected " << savedHoles.size() << " holes!" << endl;
+        
+        // Draw holes on the empty frame for visualization
+        for (size_t i = 0; i < savedHoles.size(); i++) {
+            circle(emptyFrame, savedHoles[i].center, 8, Scalar(0, 255, 0), 2);
+            string label = to_string(i + 1) + " (" + to_string((int)savedHoles[i].center.x) + 
+                          "," + to_string((int)savedHoles[i].center.y) + ")";
+            putText(emptyFrame, label, Point(savedHoles[i].center.x + 10, savedHoles[i].center.y),
+                    FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
+        }
+        
+        imshow("Empty Frame with Holes", emptyFrame);
+        return true;
+    } else {
+        cout << "No holes detected in empty frame!" << endl;
+        return false;
+    }
 }
 
-// Function to check colors at saved hole coordinates
-void checkSavedHoleColors(Mat& original) {
-    if (!holesCalibrated || savedHoles.empty()) return;
-
+// Function to check colors at saved hole positions
+void checkHoleColors(VideoCapture& cap) {
+    if (!holesCalibrated) {
+        cout << "Please capture empty frame first (option 1)" << endl;
+        return;
+    }
+    
+    Mat currentFrame;
+    if (!cap.read(currentFrame)) {
+        cout << "Cannot read frame from camera" << endl;
+        return;
+    }
+    
+    cout << "Checking colors at hole positions..." << endl;
+    
+    // Check color at each saved hole position
     for (size_t i = 0; i < savedHoles.size(); i++) {
-        int colorResult = detectColour(original, savedHoles[i].center.x, savedHoles[i].center.y);
+        int colorResult = detectColour(currentFrame, savedHoles[i].center.x, savedHoles[i].center.y);
         savedHoles[i].colour = colorResult;
-
-        // Draw the saved hole with color coding
-        Scalar color;
-        string colorText;
-        switch (colorResult) {
-            case 1: color = Scalar(0, 0, 255); colorText = "R"; break; // Red
-            case 2: color = Scalar(255, 0, 0); colorText = "B"; break; // Blue
-            case 3: color = Scalar(0, 255, 0); colorText = "G"; break; // Green
-            case 4: color = Scalar(0, 255, 255); colorText = "Y"; break; // Yellow
-            default: color = Scalar(128, 128, 128); colorText = "N"; break; // None
-        }
-
-        // Draw filled circle for the hole
-        circle(original, savedHoles[i].center, 15, color, -1);
-        // Draw outline
-        circle(original, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
         
-        // Label with hole number and color
-        string label = to_string(i + 1) + ":" + colorText;
-        putText(original, label, Point(savedHoles[i].center.x - 10, savedHoles[i].center.y + 5),
+        string colorName;
+        switch (colorResult) {
+            case 1: colorName = "Red"; break;
+            case 2: colorName = "Blue"; break;
+            case 3: colorName = "Green"; break;
+            case 4: colorName = "Yellow"; break;
+            default: colorName = "None"; break;
+        }
+        
+        cout << "Hole " << (i + 1) << " at (" << savedHoles[i].center.x << ", " 
+             << savedHoles[i].center.y << "): " << colorName << endl;
+    }
+    
+    // Display current frame with color indicators
+    Mat displayFrame = currentFrame.clone();
+    for (size_t i = 0; i < savedHoles.size(); i++) {
+        Scalar color;
+        switch (savedHoles[i].colour) {
+            case 1: color = Scalar(0, 0, 255); break; // Red
+            case 2: color = Scalar(255, 0, 0); break; // Blue
+            case 3: color = Scalar(0, 255, 0); break; // Green
+            case 4: color = Scalar(0, 255, 255); break; // Yellow
+            default: color = Scalar(128, 128, 128); break; // None
+        }
+        
+        circle(displayFrame, savedHoles[i].center, 15, color, -1);
+        circle(displayFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
+        
+        string label = to_string(i + 1);
+        putText(displayFrame, label, Point(savedHoles[i].center.x - 5, savedHoles[i].center.y + 5),
                 FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 2);
     }
+    
+    putText(displayFrame, "Current Colors", Point(10, 30), 
+            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
+    
+    imshow("Current Frame with Colors", displayFrame);
+}
 
-    // Print color status to console occasionally
-    static int frameCount = 0;
-    if (frameCount++ % 30 == 0) { // Print every 30 frames
-        cout << "Current colors: ";
-        for (size_t i = 0; i < savedHoles.size(); i++) {
-            string colorText;
-            switch (savedHoles[i].colour) {
-                case 1: colorText = "R"; break;
-                case 2: colorText = "B"; break;
-                case 3: colorText = "G"; break;
-                case 4: colorText = "Y"; break;
-                default: colorText = "-"; break;
-            }
-            cout << (i + 1) << ":" << colorText << " ";
-        }
-        cout << endl;
+// Function to print hole coordinates
+void printHoleCoordinates() {
+    if (!holesCalibrated) {
+        cout << "No holes calibrated yet. Use option 1 first." << endl;
+        return;
+    }
+    
+    cout << "=== Hole Coordinates ===" << endl;
+    for (size_t i = 0; i < savedHoles.size(); i++) {
+        cout << "Hole " << (i + 1) << ": X = " << savedHoles[i].center.x 
+             << ", Y = " << savedHoles[i].center.y 
+             << ", Area = " << savedHoles[i].area << endl;
     }
 }
 
 int main(int argc, char* argv[])
 {
-    // ========= Variables for camera function ==========
-    int n = 0;
-    char filename[200];
-    Mat frame;
-
     // ========= Camera Setup ===========================
     VideoCapture cap(0);
     if (!cap.isOpened()) {
-        cout << "cannot open camera";
+        cout << "Cannot open camera" << endl;
         return -1;
     }
 
@@ -257,165 +302,125 @@ int main(int argc, char* argv[])
     int err;
     char cmd = 0;
 
-    // Set up port, check port usage
-    if (argc < 2)
-    {
-        fprintf(stderr, " Port use\n");
+    // Set up port
+    if (argc < 2) {
+        fprintf(stderr, "Port use\n");
         exit(1);
     }
 
-    // Get port name
     err = sp_get_port_by_name("COM3", &port);
     if (err == SP_OK)
         err = sp_open(port, SP_MODE_WRITE);
-    if (err != SP_OK)
-    {
-        fprintf(stderr, " Can't open port %s\n", argv[1]);
+    if (err != SP_OK) {
+        fprintf(stderr, "Can't open port %s\n", argv[1]);
         exit(2);
     }
     sp_set_baudrate(port, BAUD);
     sp_set_bits(port, 8);
 
-    // ========== COLOUR DETECTION ===================
-    namedWindow("Control", WINDOW_AUTOSIZE);
-
-    // Create trackbars for dark object detection
-    int iLowH = 0;
-    int iHighH = 179;
-    int iLowS = 0;
-    int iHighS = 255;
-    int iLowV = 0;
-    int iHighV = 100;
-
-    createTrackbar("LowH", "Control", &iLowH, 179);
-    createTrackbar("HighH", "Control", &iHighH, 179);
-    createTrackbar("LowS", "Control", &iLowS, 255);
-    createTrackbar("HighS", "Control", &iHighS, 255);
-    createTrackbar("LowV", "Control", &iLowV, 255);
-    createTrackbar("HighV", "Control", &iHighV, 255);
-
-    // =========== MAIN LOOP ==============================
+    // ========== MAIN LOOP ==============================
+    cout << "Robot Control System Started" << endl;
+    cout << "Make sure the board is empty and visible in the camera" << endl;
     printMenu();
 
     while (true) {
-        Mat imgOriginal;
-        bool bSuccess = cap.read(imgOriginal);
-
-        if (!bSuccess) {
-            cout << "Cannot read a frame from video stream" << endl;
-            break;
-        }
-
-        Mat imgHSV;
-        cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV);
-
-        Mat imgThresholded;
-        inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded);
-
-        // Morphological operations to clean up the image
-        Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
-        morphologyEx(imgThresholded, imgThresholded, MORPH_CLOSE, kernel);
-        morphologyEx(imgThresholded, imgThresholded, MORPH_OPEN, kernel);
-
-        // Detect the largest dark object (board)
-        vector<Point> boardContour = detectBoard(imgThresholded, imgOriginal);
-
-        if (calibrationMode) {
-            // CALIBRATION MODE: Detect holes on empty board
-            vector<Hole> detectedHoles = calibrateHoles(imgThresholded, imgOriginal, boardContour);
-            
-            // Display calibration instructions
-            string instruction = "CALIBRATION: Place empty board and press 'c'";
-            putText(imgOriginal, instruction, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
-            putText(imgOriginal, "Detected holes: " + to_string(detectedHoles.size()), 
-                    Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 255), 2);
-            
-        } else {
-            // NORMAL MODE: Check colors at saved coordinates
-            checkSavedHoleColors(imgOriginal);
-            
-            // Display status
-            string status = "MONITORING: " + to_string(savedHoles.size()) + " holes";
-            putText(imgOriginal, status, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
-        }
-
-        // Display images
-        imshow("Thresholded Image", imgThresholded);
-        imshow("Original with Detection", imgOriginal);
-
-        char key = (char)waitKey(25);
-
-        // Handle serial communication
-        if (key == '1' || key == '2' || key == '3' || key == 'h' || key == 's' || key == 'r') {
-            sp_blocking_write(port, &key, 1, 100);
-        }
-
-        switch (key) {
-        case 'c':  // Calibrate holes
-            if (calibrationMode && !boardContour.empty()) {
-                vector<Hole> detectedHoles = calibrateHoles(imgThresholded, imgOriginal, boardContour);
-                if (!detectedHoles.empty()) {
-                    saveCalibratedHoles(detectedHoles);
-                } else {
-                    cout << "No holes detected! Adjust threshold values." << endl;
+        // Display live feed
+        Mat liveFrame;
+        if (cap.read(liveFrame)) {
+            if (holesCalibrated) {
+                // Show saved hole positions on live feed
+                for (size_t i = 0; i < savedHoles.size(); i++) {
+                    circle(liveFrame, savedHoles[i].center, 5, Scalar(0, 255, 0), 2);
                 }
-            } else if (!calibrationMode) {
-                cout << "Recalibrating..." << endl;
-                calibrationMode = true;
-                holesCalibrated = false;
+                putText(liveFrame, "Holes Calibrated - " + to_string(savedHoles.size()) + " holes", 
+                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+            } else {
+                putText(liveFrame, "Press '1' to capture empty frame and detect holes", 
+                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 0, 255), 2);
             }
-            break;
+            imshow("Live Feed", liveFrame);
+        }
 
-        case '1':  // Noughts & Crosses
-            cmd = 1;
-            cout << "Sent CMD 1 (Noughts & Crosses)" << endl;
-            printMenu();
-            break;
+        // Wait for key press with longer delay for better responsiveness
+        int key = waitKey(100);
+        
+        if (key != -1) {
+            switch (key) {
+            case '1':  // Capture empty frame and detect holes
+                if (captureEmptyFrame(cap)) {
+                    cout << "Hole calibration successful!" << endl;
+                } else {
+                    cout << "Hole calibration failed. Adjust camera/view and try again." << endl;
+                }
+                printMenu();
+                break;
 
-        case '2':  // Podium
-            cmd = 2;
-            cout << "Sent CMD 2 (Podium)" << endl;
-            printMenu();
-            break;
+            case '2':  // Check colors at hole positions
+                checkHoleColors(cap);
+                printMenu();
+                break;
 
-        case '3':  // Stack the Blocks
-            cmd = 4;
-            cout << "Sent CMD 3 (Stack the Blocks)" << endl;
-            printMenu();
-            break;
+            case '3':  // Print hole coordinates
+                printHoleCoordinates();
+                printMenu();
+                break;
 
-        case 'h':  // Home
-            cmd = 8;
-            cout << "Sent CMD 4 (Home)" << endl;
-            printMenu();
-            break;
+            case '4':  // Noughts & Crosses
+                cmd = '1';
+                cout << "Sent CMD 1 (Noughts & Crosses)" << endl;
+                sp_blocking_write(port, &cmd, 1, 100);
+                printMenu();
+                break;
 
-        case 's':  // Stop
-            cmd = 16;
-            cout << "STOP (bit4=1)" << endl;
-            printMenu();
-            break;
+            case '5':  // Podium
+                cmd = '2';
+                cout << "Sent CMD 2 (Podium)" << endl;
+                sp_blocking_write(port, &cmd, 1, 100);
+                printMenu();
+                break;
 
-        case 'r':  // Resume
-            cmd = 32;
-            cout << "RESUME (bit5=1)" << endl;
-            printMenu();
-            break;
+            case '6':  // Stack the Blocks
+                cmd = '3';
+                cout << "Sent CMD 3 (Stack the Blocks)" << endl;
+                sp_blocking_write(port, &cmd, 1, 100);
+                printMenu();
+                break;
 
-        case 'q':
-        case 'Q':
-        case 27: //escape key
-            sp_close(port);
-            return 0;
-        case ' ': //Save an image
-            sprintf_s(filename, "filename%.3d.jpg", n++);
-            imwrite(filename, imgOriginal);
-            cout << "Saved " << filename << endl;
-            break;
-        default:
-            break;
+            case 'h':  // Home
+                cmd = 'h';
+                cout << "Sent CMD 4 (Home)" << endl;
+                sp_blocking_write(port, &cmd, 1, 100);
+                printMenu();
+                break;
+
+            case 's':  // Stop
+                cmd = 's';
+                cout << "STOP" << endl;
+                sp_blocking_write(port, &cmd, 1, 100);
+                printMenu();
+                break;
+
+            case 'r':  // Resume
+                cmd = 'r';
+                cout << "RESUME" << endl;
+                sp_blocking_write(port, &cmd, 1, 100);
+                printMenu();
+                break;
+
+            case 'q':
+            case 'Q':
+            case 27: // Escape key
+                cout << "Quitting..." << endl;
+                sp_close(port);
+                return 0;
+
+            default:
+                // Ignore other keys
+                break;
+            }
         }
     }
+    
     sp_close(port);
     return 0;
 }
