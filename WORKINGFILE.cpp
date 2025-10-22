@@ -1,14 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libserialport.h>
-
-#define BAUD 9600
-
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 #include <iostream>
 #include <vector>
-#include <stdio.h>
+
+#define BAUD 9600
 
 using namespace cv;
 using namespace std;
@@ -28,12 +26,12 @@ bool emptyFrameCaptured = false;
 
 void printMenu() {
     cout << "\n=== Robot Control Menu ===" << endl;
-    cout << "1. Capture Empty Frame & Detect Holes" << endl;
-    cout << "2. Check Colors at Hole Positions" << endl;
-    cout << "3. Print Hole Coordinates" << endl;
-    cout << "4. Noughts & Crosses" << endl;
-    cout << "5. Podium" << endl;
-    cout << "6. Stack the Blocks" << endl;
+    cout << "1. Capture Empty Matrix" << endl;
+    cout << "2. Detect Colours" << endl;
+    cout << "3. Print Matrix Coordinates" << endl;
+    cout << "4. Routine 1" << endl;
+    cout << "5. Routine 2" << endl;
+    cout << "6. Routine 3" << endl;
     cout << "h. Home" << endl;
     cout << "s. Stop" << endl;
     cout << "r. Resume" << endl;
@@ -47,7 +45,7 @@ int detectColour(Mat& original, int x, int y) {
     if (x < 0 || x >= original.cols || y < 0 || y >= original.rows) {
         return 0;
     }
-    
+
     // Convert to HSV for color detection
     Mat hsv;
     cvtColor(original, hsv, COLOR_BGR2HSV);
@@ -60,20 +58,16 @@ int detectColour(Mat& original, int x, int y) {
     int value = pixel[2];
 
     // Check for red (wraps around 0-10 and 170-180 in HSV)
-    if ((hue <= 10 || hue >= 170) && saturation > 100 && value > 50) {
+    if ((hue >= 140 && hue <= 180) && saturation > 100 && value > 50) {
         return 1; // Red
     }
     // Check for blue
-    else if (hue >= 100 && hue <= 130 && saturation > 100 && value > 50) {
+    else if (hue >= 100 && hue <= 135 && saturation > 100 && value > 50) {
         return 2; // Blue
     }
     // Check for green
-    else if (hue >= 40 && hue <= 80 && saturation > 100 && value > 50) {
+    else if (hue >= 30 && hue <= 80 && saturation > 100 && value > 50) {
         return 3; // Green
-    }
-    // Check for yellow
-    else if (hue >= 20 && hue <= 35 && saturation > 100 && value > 50) {
-        return 4; // Yellow
     }
 
     return 0; // No color detected
@@ -170,12 +164,12 @@ bool captureEmptyFrame(VideoCapture& cap) {
         cout << "Cannot read frame from camera" << endl;
         return false;
     }
-    
+
     emptyFrame = frame.clone();
     emptyFrameCaptured = true;
-    
+
     cout << "Empty frame captured! Processing holes..." << endl;
-    
+
     // Process the empty frame to detect holes
     Mat imgHSV;
     cvtColor(emptyFrame, imgHSV, COLOR_BGR2HSV);
@@ -192,23 +186,24 @@ bool captureEmptyFrame(VideoCapture& cap) {
     // Detect board and holes
     vector<Point> boardContour = detectBoard(imgThresholded, emptyFrame);
     savedHoles = detectHolesInBoard(imgThresholded, emptyFrame, boardContour);
-    
+
     if (!savedHoles.empty()) {
         holesCalibrated = true;
         cout << "Successfully detected " << savedHoles.size() << " holes!" << endl;
-        
+
         // Draw holes on the empty frame for visualization
         for (size_t i = 0; i < savedHoles.size(); i++) {
             circle(emptyFrame, savedHoles[i].center, 8, Scalar(0, 255, 0), 2);
-            string label = to_string(i + 1) + " (" + to_string((int)savedHoles[i].center.x) + 
-                          "," + to_string((int)savedHoles[i].center.y) + ")";
+            string label = to_string(i + 1) + " (" + to_string((int)savedHoles[i].center.x) +
+                "," + to_string((int)savedHoles[i].center.y) + ")";
             putText(emptyFrame, label, Point(savedHoles[i].center.x + 10, savedHoles[i].center.y),
-                    FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
+                FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
         }
-        
+
         imshow("Empty Frame with Holes", emptyFrame);
         return true;
-    } else {
+    }
+    else {
         cout << "No holes detected in empty frame!" << endl;
         return false;
     }
@@ -220,56 +215,54 @@ void checkHoleColors(VideoCapture& cap) {
         cout << "Please capture empty frame first (option 1)" << endl;
         return;
     }
-    
+
     Mat currentFrame;
     if (!cap.read(currentFrame)) {
         cout << "Cannot read frame from camera" << endl;
         return;
     }
-    
+
     cout << "Checking colors at hole positions..." << endl;
-    
+
     // Check color at each saved hole position
     for (size_t i = 0; i < savedHoles.size(); i++) {
         int colorResult = detectColour(currentFrame, savedHoles[i].center.x, savedHoles[i].center.y);
         savedHoles[i].colour = colorResult;
-        
+
         string colorName;
         switch (colorResult) {
-            case 1: colorName = "Red"; break;
-            case 2: colorName = "Blue"; break;
-            case 3: colorName = "Green"; break;
-            case 4: colorName = "Yellow"; break;
-            default: colorName = "None"; break;
+        case 1: colorName = "Red"; break;
+        case 2: colorName = "Blue"; break;
+        case 3: colorName = "Green"; break;
+        default: colorName = "None"; break;
         }
-        
-        cout << "Hole " << (i + 1) << " at (" << savedHoles[i].center.x << ", " 
-             << savedHoles[i].center.y << "): " << colorName << endl;
+
+        cout << "Hole " << (i + 1) << " at (" << savedHoles[i].center.x << ", "
+            << savedHoles[i].center.y << "): " << colorName << endl;
     }
-    
+
     // Display current frame with color indicators
     Mat displayFrame = currentFrame.clone();
     for (size_t i = 0; i < savedHoles.size(); i++) {
         Scalar color;
         switch (savedHoles[i].colour) {
-            case 1: color = Scalar(0, 0, 255); break; // Red
-            case 2: color = Scalar(255, 0, 0); break; // Blue
-            case 3: color = Scalar(0, 255, 0); break; // Green
-            case 4: color = Scalar(0, 255, 255); break; // Yellow
-            default: color = Scalar(128, 128, 128); break; // None
+        case 1: color = Scalar(0, 0, 255); break; // Red
+        case 2: color = Scalar(255, 0, 0); break; // Blue
+        case 3: color = Scalar(0, 255, 0); break; // Green
+        default: color = Scalar(128, 128, 128); break; // None
         }
-        
+
         circle(displayFrame, savedHoles[i].center, 15, color, -1);
         circle(displayFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
-        
+
         string label = to_string(i + 1);
         putText(displayFrame, label, Point(savedHoles[i].center.x - 5, savedHoles[i].center.y + 5),
-                FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 2);
+            FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 2);
     }
-    
-    putText(displayFrame, "Current Colors", Point(10, 30), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    
+
+    putText(displayFrame, "Current Colors", Point(10, 30),
+        FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
+
     imshow("Current Frame with Colors", displayFrame);
 }
 
@@ -279,25 +272,25 @@ void printHoleCoordinates() {
         cout << "No holes calibrated yet. Use option 1 first." << endl;
         return;
     }
-    
+
     cout << "=== Hole Coordinates ===" << endl;
     for (size_t i = 0; i < savedHoles.size(); i++) {
-        cout << "Hole " << (i + 1) << ": X = " << savedHoles[i].center.x 
-             << ", Y = " << savedHoles[i].center.y 
-             << ", Area = " << savedHoles[i].area << endl;
+        cout << "Hole " << (i + 1) << ": X = " << savedHoles[i].center.x
+            << ", Y = " << savedHoles[i].center.y
+            << ", Area = " << savedHoles[i].area << endl;
     }
 }
 
 int main(int argc, char* argv[])
 {
-    // ========= Camera Setup ===========================
+    // ========= Camera Setup =========================================
     VideoCapture cap(0);
     if (!cap.isOpened()) {
         cout << "Cannot open camera" << endl;
         return -1;
     }
 
-    // ========= Serial Comms ===========================
+    // ========= Serial Comms =========================================
     struct sp_port* port;
     int err;
     char cmd = 0;
@@ -318,9 +311,7 @@ int main(int argc, char* argv[])
     sp_set_baudrate(port, BAUD);
     sp_set_bits(port, 8);
 
-    // ========== MAIN LOOP ==============================
-    cout << "Robot Control System Started" << endl;
-    cout << "Make sure the board is empty and visible in the camera" << endl;
+    // ========== MAIN LOOP ===========================================
     printMenu();
 
     while (true) {
@@ -332,24 +323,21 @@ int main(int argc, char* argv[])
                 for (size_t i = 0; i < savedHoles.size(); i++) {
                     circle(liveFrame, savedHoles[i].center, 5, Scalar(0, 255, 0), 2);
                 }
-                putText(liveFrame, "Holes Calibrated - " + to_string(savedHoles.size()) + " holes", 
-                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
-            } else {
-                putText(liveFrame, "Press '1' to capture empty frame and detect holes", 
-                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 0, 255), 2);
+                putText(liveFrame, "Holes Calibrated - " + to_string(savedHoles.size()) + " holes",
+                    Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
             }
             imshow("Live Feed", liveFrame);
         }
 
-        // Wait for key press with longer delay for better responsiveness
         int key = waitKey(100);
-        
+
         if (key != -1) {
             switch (key) {
             case '1':  // Capture empty frame and detect holes
                 if (captureEmptyFrame(cap)) {
                     cout << "Hole calibration successful!" << endl;
-                } else {
+                }
+                else {
                     cout << "Hole calibration failed. Adjust camera/view and try again." << endl;
                 }
                 printMenu();
@@ -420,7 +408,7 @@ int main(int argc, char* argv[])
             }
         }
     }
-    
+
     sp_close(port);
     return 0;
 }
