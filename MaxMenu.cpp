@@ -16,9 +16,9 @@ using namespace std;
 void showMenu() {
 	cout << "\n";
 	cout << "=== Simple Menu ===\n";
-	cout << "1. Option One\n";
-	cout << "2. Option Two\n";
-	cout << "3. Option Three\n";
+	cout << "1. Move Block Routine\n";
+	cout << "2. Home Robot\n";
+	cout << "3. Enter Q to quit\n";
 	cout << "4. Option Four\n";
 	cout << "Choose an option (1-4): ";
 }
@@ -27,7 +27,7 @@ void showMenu() {
 int main(int argc, char* argv[])
 {
 
-	
+
 	/*Variables for camera function*/
 	int n = 0;
 	char filename[200];
@@ -78,14 +78,14 @@ int main(int argc, char* argv[])
 	sp_set_bits(port, 8);
 
 	/* specify the comand to send to the port */
-	
+
 	/* set up to exit when q key is entered */
 	cmd = 0;
 	sp_blocking_write(port, &cmd, 1, 100);
 	showMenu();
 	while (key != 'q') {
 		/*cap >> frame;*/
-	
+
 
 		/*The code contained here reads and outputs a single pixel value at (10,15)*/
 		//Vec3b intensity = frame.at<Vec3b>(10, 15);
@@ -112,18 +112,18 @@ int main(int argc, char* argv[])
 		//imshow(window_name, frame);
 		/*char key = (char)waitKey(25);*/
 
-		
+
 		/* write the number "cmd" to the port */
-		
-		
+
+
 		cin >> (key);
 		if (!isdigit(key) && key != 'q' && key != 'Q' && key != 27) {
 			cerr << "Invalid input. Please enter a number (1–4) or 'q' to quit.\n";
 			showMenu();
-			continue;  
+			continue;
 		}
 		switch (key) {
-		
+
 		case '1':
 			cout << "Pick block from column 1 (1-3): ";  cin >> pick;
 			cout << "Place block in column 3 (1-3): ";   cin >> place;
@@ -139,19 +139,24 @@ int main(int argc, char* argv[])
 			cout << int(cmd);
 			std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 			cmd = 0;
-			sp_blocking_write(port, &cmd, 1, 100); 
+			sp_blocking_write(port, &cmd, 1, 100);
 			sp_drain(port);
 			showMenu();
 			break;
 		case '2':
 			cout << "You chose Option 2." << endl;
-			showMenu();
-			break;
-		case '3':
+			cmd = 7;
+			sp_blocking_write(port, &cmd, 1, 100);
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			cmd = 0;
 			sp_blocking_write(port, &cmd, 1, 100);
 			showMenu();
 			break;
+		case '3':
 			
+			showMenu();
+			break;
+
 		case '4':
 			cout << "Exiting program..." << endl;
 			break;
@@ -166,7 +171,7 @@ int main(int argc, char* argv[])
 			break;
 		default:
 			break;
-			
+
 		}
 	}
 	/* close the port */
