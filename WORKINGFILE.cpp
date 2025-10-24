@@ -23,11 +23,12 @@ vector<Hole> savedHoles;
 bool holesCalibrated = false;
 Mat emptyFrame;
 bool emptyFrameCaptured = false;
+bool continuousColorDetection = false;
 
 void printMenu() {
     cout << "\n=== Robot Control Menu ===" << endl;
     cout << "1. Capture Empty Matrix" << endl;
-    cout << "2. Detect Colours" << endl;
+    cout << "2. Toggle Continuous Color Detection" << endl;
     cout << "3. Print Matrix Coordinates" << endl;
     cout << "4. Routine 1" << endl;
     cout << "5. Routine 2" << endl;
@@ -209,61 +210,52 @@ bool captureEmptyFrame(VideoCapture& cap) {
     }
 }
 
-// Function to check colors at saved hole positions
-void checkHoleColors(VideoCapture& cap) {
-    if (!holesCalibrated) {
-        cout << "Please capture empty frame first (option 1)" << endl;
-        return;
-    }
-
-    Mat currentFrame;
-    if (!cap.read(currentFrame)) {
-        cout << "Cannot read frame from camera" << endl;
-        return;
-    }
-
-    cout << "Checking colors at hole positions..." << endl;
+// Function to check colors at saved hole positions on live feed
+void checkHoleColorsLive(Mat& liveFrame) {
+    if (!holesCalibrated || savedHoles.empty()) return;
 
     // Check color at each saved hole position
     for (size_t i = 0; i < savedHoles.size(); i++) {
-        int colorResult = detectColour(currentFrame, savedHoles[i].center.x, savedHoles[i].center.y);
+        int colorResult = detectColour(liveFrame, savedHoles[i].center.x, savedHoles[i].center.y);
         savedHoles[i].colour = colorResult;
 
-        string colorName;
-        switch (colorResult) {
-        case 1: colorName = "Red"; break;
-        case 2: colorName = "Blue"; break;
-        case 3: colorName = "Green"; break;
-        default: colorName = "None"; break;
-        }
-
-        cout << "Hole " << (i + 1) << " at (" << savedHoles[i].center.x << ", "
-            << savedHoles[i].center.y << "): " << colorName << endl;
-    }
-
-    // Display current frame with color indicators
-    Mat displayFrame = currentFrame.clone();
-    for (size_t i = 0; i < savedHoles.size(); i++) {
+        // Draw colored circles and labels
         Scalar color;
-        switch (savedHoles[i].colour) {
-        case 1: color = Scalar(0, 0, 255); break; // Red
-        case 2: color = Scalar(255, 0, 0); break; // Blue
-        case 3: color = Scalar(0, 255, 0); break; // Green
-        default: color = Scalar(128, 128, 128); break; // None
+        string colorText;
+        switch (colorResult) {
+        case 1: color = Scalar(0, 0, 255); colorText = "R"; break; // Red
+        case 2: color = Scalar(255, 0, 0); colorText = "B"; break; // Blue
+        case 3: color = Scalar(0, 255, 0); colorText = "G"; break; // Green
+        default: color = Scalar(128, 128, 128); colorText = "N"; break; // None
         }
 
-        circle(displayFrame, savedHoles[i].center, 15, color, -1);
-        circle(displayFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
-
-        string label = to_string(i + 1);
-        putText(displayFrame, label, Point(savedHoles[i].center.x - 5, savedHoles[i].center.y + 5),
-            FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 255, 255), 2);
+        // Draw filled circle for the hole
+        circle(liveFrame, savedHoles[i].center, 15, color, -1);
+        // Draw outline
+        circle(liveFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
+        
+        // Label with hole number and color
+        string label = to_string(i + 1) + ":" + colorText;
+        putText(liveFrame, label, Point(savedHoles[i].center.x - 8, savedHoles[i].center.y + 5),
+            FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 2);
     }
 
-    putText(displayFrame, "Current Colors", Point(10, 30),
-        FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-
-    imshow("Current Frame with Colors", displayFrame);
+    // Print color status to console occasionally (every 2 seconds)
+    static int frameCount = 0;
+    if (frameCount++ % 60 == 0) { // Assuming ~30fps, so every 2 seconds
+        cout << "Current colors: ";
+        for (size_t i = 0; i < savedHoles.size(); i++) {
+            string colorText;
+            switch (savedHoles[i].colour) {
+            case 1: colorText = "R"; break;
+            case 2: colorText = "B"; break;
+            case 3: colorText = "G"; break;
+            default: colorText = "-"; break;
+            }
+            cout << (i + 1) << ":" << colorText << " ";
+        }
+        cout << endl;
+    }
 }
 
 // Function to print hole coordinates
@@ -312,6 +304,8 @@ int main(int argc, char* argv[])
     sp_set_bits(port, 8);
 
     // ========== MAIN LOOP ===========================================
+    cout << "Robot Control System Started" << endl;
+    cout << "Press '1' to capture empty matrix first" << endl;
     printMenu();
 
     while (true) {
@@ -319,23 +313,41 @@ int main(int argc, char* argv[])
         Mat liveFrame;
         if (cap.read(liveFrame)) {
             if (holesCalibrated) {
-                // Show saved hole positions on live feed
-                for (size_t i = 0; i < savedHoles.size(); i++) {
-                    circle(liveFrame, savedHoles[i].center, 5, Scalar(0, 255, 0), 2);
+                if (continuousColorDetection) {
+                    // Continuous color detection mode
+                    checkHoleColorsLive(liveFrame);
+                    putText(liveFrame, "Continuous Color Detection - ON", 
+                            Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+                    putText(liveFrame, "Press '2' to turn off", 
+                            Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+                } else {
+                    // Just show hole positions without color detection
+                    for (size_t i = 0; i < savedHoles.size(); i++) {
+                        circle(liveFrame, savedHoles[i].center, 5, Scalar(0, 255, 0), 2);
+                    }
+                    putText(liveFrame, "Holes Calibrated - " + to_string(savedHoles.size()) + " holes", 
+                            Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+                    putText(liveFrame, "Press '2' for continuous color detection", 
+                            Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
                 }
-                putText(liveFrame, "Holes Calibrated - " + to_string(savedHoles.size()) + " holes",
-                    Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+            } else {
+                // Calibration not done yet
+                putText(liveFrame, "Press '1' to capture empty matrix and detect holes", 
+                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 0, 255), 2);
             }
+            
             imshow("Live Feed", liveFrame);
         }
 
-        int key = waitKey(100);
+        int key = waitKey(30); // Reduced delay for more responsive live detection
 
         if (key != -1) {
             switch (key) {
             case '1':  // Capture empty frame and detect holes
                 if (captureEmptyFrame(cap)) {
                     cout << "Hole calibration successful!" << endl;
+                    continuousColorDetection = true; // Auto-start color detection
+                    cout << "Continuous color detection started automatically" << endl;
                 }
                 else {
                     cout << "Hole calibration failed. Adjust camera/view and try again." << endl;
@@ -343,8 +355,14 @@ int main(int argc, char* argv[])
                 printMenu();
                 break;
 
-            case '2':  // Check colors at hole positions
-                checkHoleColors(cap);
+            case '2':  // Toggle continuous color detection
+                if (holesCalibrated) {
+                    continuousColorDetection = !continuousColorDetection;
+                    cout << "Continuous color detection: " 
+                         << (continuousColorDetection ? "ON" : "OFF") << endl;
+                } else {
+                    cout << "Please calibrate holes first (option 1)" << endl;
+                }
                 printMenu();
                 break;
 
