@@ -19,6 +19,7 @@ struct Hole {
     int colour;
     int row;
     int col;
+    int position_id; // 1-9 for 3x3 grid
 };
 
 // Global variables
@@ -36,18 +37,22 @@ map<int, string> colorNames = {
     {0, "None"}
 };
 
-// Position mapping for 3x3 grid (adjust based on your hole layout)
-map<int, Point2f> targetPositions = {
-    {1, Point2f(100, 100)},  // Row 1, Col 1 (top-left)
-    {2, Point2f(200, 100)},  // Row 1, Col 2 (top-middle)
-    {3, Point2f(300, 100)},  // Row 1, Col 3 (top-right)
-    {4, Point2f(100, 200)},  // Row 2, Col 1 (middle-left)
-    {5, Point2f(200, 200)},  // Row 2, Col 2 (center)
-    {6, Point2f(300, 200)},  // Row 2, Col 3 (middle-right)
-    {7, Point2f(100, 300)},  // Row 3, Col 1 (bottom-left)
-    {8, Point2f(200, 300)},  // Row 3, Col 2 (bottom-middle)
-    {9, Point2f(300, 300)}   // Row 3, Col 3 (bottom-right)
-};
+// Command mapping for pick-and-place routines
+// Format: cmd = (source_position * 10) + target_position
+// Example: Move from position 2 to position 5 -> cmd = 25
+map<string, int> moveCommands;
+
+void initializeMoveCommands() {
+    // Generate all possible move combinations (1-9 to 1-9)
+    for (int src = 1; src <= 9; src++) {
+        for (int dst = 1; dst <= 9; dst++) {
+            if (src != dst) {
+                string key = to_string(src) + "to" + to_string(dst);
+                moveCommands[key] = src * 10 + dst;
+            }
+        }
+    }
+}
 
 void printMenu() {
     cout << "\n=== Robot Control Menu ===" << endl;
@@ -157,11 +162,6 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
                 hole.center = center;
                 hole.area = area;
                 hole.colour = 0;
-                
-                // Assign grid position based on hole index (you may need to sort these)
-                hole.row = (i % 3) + 1;  // Temporary assignment - adjust based on your layout
-                hole.col = (i / 3) + 1;
-                
                 holes.push_back(hole);
             }
         }
@@ -206,15 +206,18 @@ bool captureEmptyFrame(VideoCapture& cap) {
             return a.center.y < b.center.y;
         });
 
-        // Assign proper grid positions after sorting
+        // Assign grid positions (1-9 for 3x3 grid)
         for (size_t i = 0; i < savedHoles.size(); i++) {
-            savedHoles[i].row = (i / 3) + 1;  // Assuming 3x3 grid
+            savedHoles[i].row = (i / 3) + 1;
             savedHoles[i].col = (i % 3) + 1;
+            savedHoles[i].position_id = i + 1; // Position 1-9
         }
 
         for (size_t i = 0; i < savedHoles.size(); i++) {
             circle(emptyFrame, savedHoles[i].center, 8, Scalar(0, 255, 0), 2);
-            string label = "R" + to_string(savedHoles[i].row) + "C" + to_string(savedHoles[i].col);
+            string label = "P" + to_string(savedHoles[i].position_id) + 
+                          " (R" + to_string(savedHoles[i].row) + 
+                          "C" + to_string(savedHoles[i].col) + ")";
             putText(emptyFrame, label, Point(savedHoles[i].center.x + 10, savedHoles[i].center.y),
                 FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
         }
@@ -248,7 +251,7 @@ void checkHoleColorsLive(Mat& liveFrame) {
         circle(liveFrame, savedHoles[i].center, 15, color, -1);
         circle(liveFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
         
-        string label = "R" + to_string(savedHoles[i].row) + "C" + to_string(savedHoles[i].col) + ":" + colorText;
+        string label = "P" + to_string(savedHoles[i].position_id) + ":" + colorText;
         putText(liveFrame, label, Point(savedHoles[i].center.x - 15, savedHoles[i].center.y + 5),
             FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
     }
@@ -257,7 +260,7 @@ void checkHoleColorsLive(Mat& liveFrame) {
     if (frameCount++ % 60 == 0) {
         cout << "Current colors: ";
         for (size_t i = 0; i < savedHoles.size(); i++) {
-            cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col 
+            cout << "P" << savedHoles[i].position_id 
                  << ":" << colorNames[savedHoles[i].colour] << " ";
         }
         cout << endl;
@@ -273,8 +276,9 @@ void printHoleCoordinates() {
 
     cout << "=== Hole Coordinates ===" << endl;
     for (size_t i = 0; i < savedHoles.size(); i++) {
-        cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col 
-             << ": X=" << savedHoles[i].center.x 
+        cout << "Position " << savedHoles[i].position_id 
+             << " (R" << savedHoles[i].row << "C" << savedHoles[i].col 
+             << "): X=" << savedHoles[i].center.x 
              << ", Y=" << savedHoles[i].center.y 
              << ", Area=" << savedHoles[i].area << endl;
     }
@@ -292,13 +296,15 @@ void printCurrentLayout() {
         for (int col = 1; col <= 3; col++) {
             // Find hole at this position
             string color = "Empty";
+            int position_id = 0;
             for (const auto& hole : savedHoles) {
                 if (hole.row == row && hole.col == col) {
                     color = colorNames[hole.colour];
+                    position_id = hole.position_id;
                     break;
                 }
             }
-            cout << "R" << row << "C" << col << ": " << color << "\t";
+            cout << "P" << position_id << " (R" << row << "C" << col << "): " << color << "\t";
         }
         cout << endl;
     }
@@ -308,6 +314,16 @@ void printCurrentLayout() {
 Hole* findBlockByColor(int color) {
     for (auto& hole : savedHoles) {
         if (hole.colour == color) {
+            return &hole;
+        }
+    }
+    return nullptr;
+}
+
+// Function to find empty position by target number
+Hole* findPositionById(int position_id) {
+    for (auto& hole : savedHoles) {
+        if (hole.position_id == position_id) {
             return &hole;
         }
     }
@@ -352,68 +368,48 @@ void executeMoveCommand(struct sp_port* port, const string& command) {
         return;
     }
 
-    // Find the target hole (empty position)
-    Hole* targetHole = nullptr;
-    for (auto& hole : savedHoles) {
-        if (hole.row == ((targetPosition-1)/3 + 1) && hole.col == ((targetPosition-1)%3 + 1)) {
-            targetHole = &hole;
-            break;
-        }
-    }
-
+    // Find the target position
+    Hole* targetHole = findPositionById(targetPosition);
     if (!targetHole) {
-        cout << "Target position not found!" << endl;
+        cout << "Target position " << targetPosition << " not found!" << endl;
         return;
     }
 
-    cout << "Source: R" << sourceHole->row << "C" << sourceHole->col 
-         << " (" << sourceHole->center.x << "," << sourceHole->center.y << ")" << endl;
-    cout << "Target: R" << targetHole->row << "C" << targetHole->col 
-         << " (" << targetHole->center.x << "," << targetHole->center.y << ")" << endl;
-
-    // Calculate movement parameters (you'll need to map these to your robot's coordinate system)
-    float deltaX = targetHole->center.x - sourceHole->center.x;
-    float deltaY = targetHole->center.y - sourceHole->center.y;
-    
-    cout << "Movement required: X=" << deltaX << ", Y=" << deltaY << endl;
-
-    // Generate command based on movement pattern
-    char cmd = 0;
-    
-    // Simple movement logic - you'll need to customize this for your robot
-    if (abs(deltaX) > abs(deltaY)) {
-        // Horizontal movement dominant
-        if (deltaX > 0) {
-            cmd = 'R'; // Move right
-            cout << "Sending command: Move Right" << endl;
-        } else {
-            cmd = 'L'; // Move left
-            cout << "Sending command: Move Left" << endl;
-        }
-    } else {
-        // Vertical movement dominant
-        if (deltaY > 0) {
-            cmd = 'D'; // Move down
-            cout << "Sending command: Move Down" << endl;
-        } else {
-            cmd = 'U'; // Move up
-            cout << "Sending command: Move Up" << endl;
-        }
+    // Check if target position is empty
+    if (targetHole->colour != 0) {
+        cout << "Target position " << targetPosition << " is not empty! It contains " 
+             << colorNames[targetHole->colour] << " block." << endl;
+        return;
     }
 
+    cout << "Source: Position " << sourceHole->position_id 
+         << " (R" << sourceHole->row << "C" << sourceHole->col << ")" << endl;
+    cout << "Target: Position " << targetHole->position_id 
+         << " (R" << targetHole->row << "C" << targetHole->col << ")" << endl;
+
+    // Generate command code: (source_position * 10) + target_position
+    int cmd_code = (sourceHole->position_id * 10) + targetHole->position_id;
+    
+    cout << "Sending command code: " << cmd_code << " (Position " 
+         << sourceHole->position_id << " to " << targetHole->position_id << ")" << endl;
+
     // Send command to robot
+    char cmd = (char)cmd_code;
     sp_blocking_write(port, &cmd, 1, 100);
-    cout << "Command sent: " << cmd << endl;
+    cout << "Command sent: " << (int)cmd << endl;
 
     // Update the board state (simulate movement)
     targetHole->colour = sourceHole->colour;
     sourceHole->colour = 0;
     
-    cout << "Movement completed!" << endl;
+    cout << "Movement command sent successfully!" << endl;
 }
 
 int main(int argc, char* argv[])
 {
+    // Initialize move commands
+    initializeMoveCommands();
+    
     VideoCapture cap(0);
     if (!cap.isOpened()) {
         cout << "Cannot open camera" << endl;
@@ -513,35 +509,35 @@ int main(int argc, char* argv[])
                 break;
 
             case '6':
-                cmd = '2';
-                cout << "Sent CMD 2 (Routine 2)" << endl;
+                cmd = 50; // Example routine command
+                cout << "Sent CMD 50 (Routine 2)" << endl;
                 sp_blocking_write(port, &cmd, 1, 100);
                 printMenu();
                 break;
 
             case '7':
-                cmd = '3';
-                cout << "Sent CMD 3 (Routine 3)" << endl;
+                cmd = 51; // Example routine command
+                cout << "Sent CMD 51 (Routine 3)" << endl;
                 sp_blocking_write(port, &cmd, 1, 100);
                 printMenu();
                 break;
 
             case 'h':
-                cmd = 'h';
-                cout << "Sent CMD 4 (Home)" << endl;
+                cmd = 99; // Home command
+                cout << "Sent CMD 99 (Home)" << endl;
                 sp_blocking_write(port, &cmd, 1, 100);
                 printMenu();
                 break;
 
             case 's':
-                cmd = 's';
+                cmd = 0; // Stop command
                 cout << "STOP" << endl;
                 sp_blocking_write(port, &cmd, 1, 100);
                 printMenu();
                 break;
 
             case 'r':
-                cmd = 'r';
+                cmd = 1; // Resume command
                 cout << "RESUME" << endl;
                 sp_blocking_write(port, &cmd, 1, 100);
                 printMenu();
