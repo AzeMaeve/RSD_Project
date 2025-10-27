@@ -35,7 +35,7 @@ bool continuousColorDetection = false;
 // Color mapping
 map<int, string> colorNames = {
     {1, "Red"},
-    {2, "Blue"}, 
+    {2, "Blue"},
     {3, "Green"},
     {0, "None"}
 };
@@ -208,7 +208,7 @@ bool captureEmptyFrame(VideoCapture& cap) {
         sort(savedHoles.begin(), savedHoles.end(), [](const Hole& a, const Hole& b) {
             if (a.center.y == b.center.y) return a.center.x < b.center.x;
             return a.center.y < b.center.y;
-        });
+            });
 
         // Assign grid positions (1-9 for 3x3 grid)
         for (size_t i = 0; i < savedHoles.size(); i++) {
@@ -219,8 +219,8 @@ bool captureEmptyFrame(VideoCapture& cap) {
 
         for (size_t i = 0; i < savedHoles.size(); i++) {
             circle(emptyFrame, savedHoles[i].center, 8, Scalar(0, 255, 0), 2);
-            string label = "R" + to_string(savedHoles[i].row) + "C" + to_string(savedHoles[i].col) + 
-                          " (P" + to_string(savedHoles[i].position_id) + ")";
+            string label = "R" + to_string(savedHoles[i].row) + "C" + to_string(savedHoles[i].col) +
+                " (P" + to_string(savedHoles[i].position_id) + ")";
             putText(emptyFrame, label, Point(savedHoles[i].center.x + 10, savedHoles[i].center.y),
                 FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
         }
@@ -253,7 +253,7 @@ void checkHoleColorsLive(Mat& liveFrame) {
 
         circle(liveFrame, savedHoles[i].center, 15, color, -1);
         circle(liveFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
-        
+
         string label = "R" + to_string(savedHoles[i].row) + "C" + to_string(savedHoles[i].col) + ":" + colorText;
         putText(liveFrame, label, Point(savedHoles[i].center.x - 15, savedHoles[i].center.y + 5),
             FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
@@ -263,8 +263,8 @@ void checkHoleColorsLive(Mat& liveFrame) {
     if (frameCount++ % 60 == 0) {
         cout << "Current colors: ";
         for (size_t i = 0; i < savedHoles.size(); i++) {
-            cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col 
-                 << ":" << colorNames[savedHoles[i].colour] << " ";
+            cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col
+                << ":" << colorNames[savedHoles[i].colour] << " ";
         }
         cout << endl;
     }
@@ -279,11 +279,11 @@ void printHoleCoordinates() {
 
     cout << "=== Hole Coordinates ===" << endl;
     for (size_t i = 0; i < savedHoles.size(); i++) {
-        cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col 
-             << " (Position " << savedHoles[i].position_id 
-             << "): X=" << savedHoles[i].center.x 
-             << ", Y=" << savedHoles[i].center.y 
-             << ", Area=" << savedHoles[i].area << endl;
+        cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col
+            << " (Position " << savedHoles[i].position_id
+            << "): X=" << savedHoles[i].center.x
+            << ", Y=" << savedHoles[i].center.y
+            << ", Area=" << savedHoles[i].area << endl;
     }
 }
 
@@ -313,7 +313,7 @@ void printCurrentLayout() {
 
 // Function to get position_id from row and column
 int getPositionId(int row, int col) {
-    auto it = positionMap.find({row, col});
+    auto it = positionMap.find({ row, col });
     if (it != positionMap.end()) {
         return it->second;
     }
@@ -386,42 +386,42 @@ void executeMoveCommand(struct sp_port* port, const string& command) {
 
     // Check if place position is empty
     if (place_hole->colour != 0) {
-        cout << "Place position R" << place_hole->row << "C" << place_hole->col 
-             << " is not empty! It contains " << colorNames[place_hole->colour] << " block." << endl;
+        cout << "Place position R" << place_hole->row << "C" << place_hole->col
+            << " is not empty! It contains " << colorNames[place_hole->colour] << " block." << endl;
         return;
     }
 
-    cout << "Pick from: R" << pick_hole->row << "C" << pick_hole->col 
-         << " (Position " << pick_hole->position_id << ")" << endl;
-    cout << "Place to: R" << place_hole->row << "C" << place_hole->col 
-         << " (Position " << place_hole->position_id << ")" << endl;
+    cout << "Pick from: R" << pick_hole->row << "C" << pick_hole->col
+        << " (Position " << pick_hole->position_id << ")" << endl;
+    cout << "Place to: R" << place_hole->row << "C" << place_hole->col
+        << " (Position " << place_hole->position_id << ")" << endl;
     cout << "Block color: " << colorName << endl;
 
     // Use the exact logic you specified for command generation
     int pick = pick_hole->position_id;
     int place = place_hole->position_id;
     unsigned char cmd = (unsigned char)((((pick - 1) << 4) | (place - 1)) + 1);
-    
+
     cout << "Generated command: pick=" << pick << ", place=" << place << ", cmd=" << int(cmd) << endl;
-    
+
     // Send command sequence
     sp_blocking_write(port, &cmd, 1, 100);
     cout << "Command sent: " << int(cmd) << endl;
-    
+
     // Wait 2 seconds
     this_thread::sleep_for(milliseconds(2000));
-    
+
     // Send zero command
     cmd = 0;
     sp_blocking_write(port, &cmd, 1, 100);
     sp_drain(port);
-    
-    cout << "Zero command sent" << endl;
+
+    cout << "Command reset" << endl;
 
     // Update the board state (simulate movement)
     place_hole->colour = pick_hole->colour;
     pick_hole->colour = 0;
-    
+
     cout << "Movement completed!" << endl;
 }
 
@@ -463,20 +463,22 @@ int main(int argc, char* argv[])
             if (holesCalibrated) {
                 if (continuousColorDetection) {
                     checkHoleColorsLive(liveFrame);
-                    putText(liveFrame, "Continuous Color Detection - ON", 
-                            Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
-                } else {
+                    putText(liveFrame, "Live Colour Detection - ON",
+                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+                }
+                else {
                     for (size_t i = 0; i < savedHoles.size(); i++) {
                         circle(liveFrame, savedHoles[i].center, 5, Scalar(0, 255, 0), 2);
                     }
-                    putText(liveFrame, "Holes Calibrated - " + to_string(savedHoles.size()) + " holes", 
-                            Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+                    putText(liveFrame, "Matrix Calibrated - " + to_string(savedHoles.size()) + " positions",
+                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
                 }
-            } else {
-                putText(liveFrame, "Press '1' to capture empty matrix and detect holes", 
-                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 0, 255), 2);
             }
-            
+            else {
+                putText(liveFrame, "Press '1'",
+                    Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 0, 255), 2);
+            }
+
             imshow("Live Feed", liveFrame);
         }
 
@@ -486,12 +488,12 @@ int main(int argc, char* argv[])
             switch (key) {
             case '1':
                 if (captureEmptyFrame(cap)) {
-                    cout << "Hole calibration successful!" << endl;
+                    cout << "Calibration successful!" << endl;
                     continuousColorDetection = true;
                     cout << "Continuous color detection started automatically" << endl;
                 }
                 else {
-                    cout << "Hole calibration failed. Adjust camera/view and try again." << endl;
+                    cout << "Calibration failed. Adjust camera/view and try again." << endl;
                 }
                 printMenu();
                 break;
@@ -499,10 +501,11 @@ int main(int argc, char* argv[])
             case '2':
                 if (holesCalibrated) {
                     continuousColorDetection = !continuousColorDetection;
-                    cout << "Continuous color detection: " 
-                         << (continuousColorDetection ? "ON" : "OFF") << endl;
-                } else {
-                    cout << "Please calibrate holes first (option 1)" << endl;
+                    cout << "Continuous color detection: "
+                        << (continuousColorDetection ? "ON" : "OFF") << endl;
+                }
+                else {
+                    cout << "Please calibrate matrix first (option 1)" << endl;
                 }
                 printMenu();
                 break;
@@ -513,7 +516,7 @@ int main(int argc, char* argv[])
                 break;
 
             case '4': {
-                cout << "Enter move command (e.g., 'r1' = move Red to row1,col3, 'b2' = move Blue to row2,col3): ";
+                cout << "Enter move command";
                 string moveCommand;
                 cin >> moveCommand;
                 executeMoveCommand(port, moveCommand);
