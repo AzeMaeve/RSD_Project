@@ -45,13 +45,6 @@ map<int, string> colorNames = {
     {0, "None"}
 };
 
-// Color character to color code mapping
-map<char, int> colorCharToCode = {
-    {'r', 1}, {'R', 1},
-    {'b', 2}, {'B', 2},
-    {'g', 3}, {'G', 3}
-};
-
 // Position mapping: row and column to position_id
 map<pair<int, int>, int> positionMap = {
     {{1, 1}, 1}, {{1, 2}, 2}, {{1, 3}, 3},
@@ -59,70 +52,82 @@ map<pair<int, int>, int> positionMap = {
     {{3, 1}, 7}, {{3, 2}, 8}, {{3, 3}, 9}
 };
 
+// Button callback functions
+void redCallback(int state, void* userdata) {
+    if (state == 1) {
+        selectedColor = "Red";
+        cout << "Selected color: Red" << endl;
+    }
+}
+
+void blueCallback(int state, void* userdata) {
+    if (state == 1) {
+        selectedColor = "Blue";
+        cout << "Selected color: Blue" << endl;
+    }
+}
+
+void greenCallback(int state, void* userdata) {
+    if (state == 1) {
+        selectedColor = "Green";
+        cout << "Selected color: Green" << endl;
+    }
+}
+
+void row1Callback(int state, void* userdata) {
+    if (state == 1) {
+        selectedRow = 1;
+        cout << "Selected row: 1" << endl;
+    }
+}
+
+void row2Callback(int state, void* userdata) {
+    if (state == 1) {
+        selectedRow = 2;
+        cout << "Selected row: 2" << endl;
+    }
+}
+
+void row3Callback(int state, void* userdata) {
+    if (state == 1) {
+        selectedRow = 3;
+        cout << "Selected row: 3" << endl;
+    }
+}
+
+void executeCallback(int state, void* userdata) {
+    if (state == 1) {
+        commandReady = true;
+        cout << "Command ready to execute!" << endl;
+    }
+}
+
+void calibrateCallback(int state, void* userdata) {
+    if (state == 1) {
+        cout << "Calibration requested - press 'c' in main window" << endl;
+    }
+}
+
 // Function to create GUI control window
 void createGUI() {
     namedWindow("Control Panel", WINDOW_NORMAL);
-    resizeWindow("Control Panel", 400, 300);
+    resizeWindow("Control Panel", 400, 400);
     
     // Create buttons for color selection
-    createButton("Pick: Red", [](int state, void* userdata) {
-        if (state == 1) {
-            selectedColor = "Red";
-            cout << "Selected color: Red" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
-    
-    createButton("Pick: Blue", [](int state, void* userdata) {
-        if (state == 1) {
-            selectedColor = "Blue";
-            cout << "Selected color: Blue" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
-    
-    createButton("Pick: Green", [](int state, void* userdata) {
-        if (state == 1) {
-            selectedColor = "Green";
-            cout << "Selected color: Green" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Pick: Red", redCallback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Pick: Blue", blueCallback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Pick: Green", greenCallback, NULL, QT_PUSH_BUTTON, 0);
     
     // Create buttons for row selection
-    createButton("Place: Row 1", [](int state, void* userdata) {
-        if (state == 1) {
-            selectedRow = 1;
-            cout << "Selected row: 1" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
-    
-    createButton("Place: Row 2", [](int state, void* userdata) {
-        if (state == 1) {
-            selectedRow = 2;
-            cout << "Selected row: 2" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
-    
-    createButton("Place: Row 3", [](int state, void* userdata) {
-        if (state == 1) {
-            selectedRow = 3;
-            cout << "Selected row: 3" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Place: Row 1", row1Callback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Place: Row 2", row2Callback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Place: Row 3", row3Callback, NULL, QT_PUSH_BUTTON, 0);
     
     // Create confirm button
-    createButton("EXECUTE MOVE", [](int state, void* userdata) {
-        if (state == 1) {
-            commandReady = true;
-            cout << "Command ready to execute!" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
+    createButton("EXECUTE MOVE", executeCallback, NULL, QT_PUSH_BUTTON, 0);
     
     // Create calibration button
-    createButton("Calibrate Matrix", [](int state, void* userdata) {
-        if (state == 1) {
-            // This will be handled in main loop
-            cout << "Calibration requested" << endl;
-        }
-    }, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Calibrate Matrix", calibrateCallback, NULL, QT_PUSH_BUTTON, 0);
 }
 
 // Function to detect color at specific coordinates and return integer code
@@ -347,6 +352,11 @@ void executeMoveFromGUI(struct sp_port* port) {
         return;
     }
 
+    if (!holesCalibrated || savedHoles.empty()) {
+        cout << "Matrix not calibrated yet!" << endl;
+        return;
+    }
+
     // Convert color name to code
     int colorCode = 0;
     if (selectedColor == "Red") colorCode = 1;
@@ -404,18 +414,22 @@ void executeMoveFromGUI(struct sp_port* port) {
     cout << "Generated command: pick_row=" << pick << ", place_row=" << place << ", cmd=" << int(cmd) << endl;
 
     // Send command sequence
-    sp_blocking_write(port, &cmd, 1, 100);
-    cout << "Command sent: " << int(cmd) << endl;
+    if (port) {
+        sp_blocking_write(port, &cmd, 1, 100);
+        cout << "Command sent: " << int(cmd) << endl;
 
-    // Wait 2 seconds
-    this_thread::sleep_for(milliseconds(2000));
+        // Wait 2 seconds
+        this_thread::sleep_for(milliseconds(2000));
 
-    // Send zero command
-    cmd = 0;
-    sp_blocking_write(port, &cmd, 1, 100);
-    sp_drain(port);
+        // Send zero command
+        cmd = 0;
+        sp_blocking_write(port, &cmd, 1, 100);
+        sp_drain(port);
 
-    cout << "Command reset" << endl;
+        cout << "Command reset" << endl;
+    } else {
+        cout << "Serial port not available!" << endl;
+    }
 
     // Update the board state (simulate movement)
     place_hole->colour = pick_hole->colour;
@@ -436,23 +450,29 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    struct sp_port* port;
+    struct sp_port* port = nullptr;
     int err;
 
-    if (argc < 2) {
-        fprintf(stderr, "Port use\n");
-        exit(1);
+    // Initialize serial port (optional - can run without it)
+    if (argc >= 2) {
+        err = sp_get_port_by_name("COM3", &port);
+        if (err == SP_OK) {
+            err = sp_open(port, SP_MODE_WRITE);
+            if (err == SP_OK) {
+                sp_set_baudrate(port, BAUD);
+                sp_set_bits(port, 8);
+                cout << "Serial port initialized successfully" << endl;
+            } else {
+                cout << "Warning: Could not open serial port" << endl;
+                port = nullptr;
+            }
+        } else {
+            cout << "Warning: Could not find serial port" << endl;
+            port = nullptr;
+        }
+    } else {
+        cout << "Warning: No serial port specified. Running in simulation mode." << endl;
     }
-
-    err = sp_get_port_by_name("COM3", &port);
-    if (err == SP_OK)
-        err = sp_open(port, SP_MODE_WRITE);
-    if (err != SP_OK) {
-        fprintf(stderr, "Can't open port %s\n", argv[1]);
-        exit(2);
-    }
-    sp_set_baudrate(port, BAUD);
-    sp_set_bits(port, 8);
 
     cout << "Robot Control System Started" << endl;
     cout << "Press 'c' to calibrate matrix first" << endl;
@@ -526,7 +546,9 @@ int main(int argc, char* argv[])
             case 'Q':
             case 27:
                 cout << "Quitting..." << endl;
-                sp_close(port);
+                if (port) {
+                    sp_close(port);
+                }
                 return 0;
 
             default:
@@ -535,6 +557,8 @@ int main(int argc, char* argv[])
         }
     }
 
-    sp_close(port);
+    if (port) {
+        sp_close(port);
+    }
     return 0;
 }
