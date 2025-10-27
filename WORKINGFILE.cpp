@@ -213,7 +213,7 @@ bool captureEmptyFrame(VideoCapture& cap) {
         // Assign grid positions (1-9 for 3x3 grid)
         for (size_t i = 0; i < savedHoles.size(); i++) {
             savedHoles[i].row = (i / 3) + 1;
-            savedHoles[i].col = (i % 3) + 1;
+            savedHoles[i].col = 3 - (i % 3);
             savedHoles[i].position_id = positionMap[{savedHoles[i].row, savedHoles[i].col}];
         }
 
@@ -398,8 +398,8 @@ void executeMoveCommand(struct sp_port* port, const string& command) {
     cout << "Block color: " << colorName << endl;
 
     // Use the exact logic you specified for command generation
-    int pick = pick_hole->position_id;
-    int place = place_hole->position_id;
+    int pick = pick_hole->row;                               
+    int place = place_hole->row;
     unsigned char cmd = (unsigned char)((((pick - 1) << 4) | (place - 1)) + 1);
 
     cout << "Generated command: pick=" << pick << ", place=" << place << ", cmd=" << int(cmd) << endl;
@@ -408,8 +408,8 @@ void executeMoveCommand(struct sp_port* port, const string& command) {
     sp_blocking_write(port, &cmd, 1, 100);
     cout << "Command sent: " << int(cmd) << endl;
 
-    // Wait 2 seconds
-    this_thread::sleep_for(milliseconds(2000));
+    // Wait 5 seconds
+    this_thread::sleep_for(milliseconds(5000));
 
     // Send zero command
     cmd = 0;
@@ -455,6 +455,11 @@ int main(int argc, char* argv[])
     cout << "Robot Control System Started" << endl;
     cout << "Press '1' to capture empty matrix first" << endl;
     cout << "Move command format: 'r1' = move Red to row1,col3, 'b2' = move Blue to row2,col3" << endl;
+    
+    // Reset command
+    cmd = 0;
+    sp_blocking_write(port, &cmd, 1, 100);
+
     printMenu();
 
     while (true) {
