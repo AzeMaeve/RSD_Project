@@ -468,7 +468,7 @@ int main(int argc, char* argv[])
                 }
                 break;
 
-            case '2':
+            case '0':
                 if (holesCalibrated) {
                     continuousColorDetection = !continuousColorDetection;
                     cout << "Continuous color detection: "
