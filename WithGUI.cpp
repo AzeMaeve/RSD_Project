@@ -33,8 +33,8 @@ bool emptyFrameCaptured = false;
 bool continuousColorDetection = false;
 
 // GUI state variables
-string selectedColor = "None";
-int selectedRow = 0;
+int selectedColor = 0; // 0=None, 1=Red, 2=Blue, 3=Green
+int selectedRow = 0;   // 0=None, 1-3=Row number
 bool commandReady = false;
 
 // Color mapping
@@ -52,82 +52,25 @@ map<pair<int, int>, int> positionMap = {
     {{3, 1}, 7}, {{3, 2}, 8}, {{3, 3}, 9}
 };
 
-// Button callback functions
-void redCallback(int state, void* userdata) {
-    if (state == 1) {
-        selectedColor = "Red";
-        cout << "Selected color: Red" << endl;
-    }
-}
-
-void blueCallback(int state, void* userdata) {
-    if (state == 1) {
-        selectedColor = "Blue";
-        cout << "Selected color: Blue" << endl;
-    }
-}
-
-void greenCallback(int state, void* userdata) {
-    if (state == 1) {
-        selectedColor = "Green";
-        cout << "Selected color: Green" << endl;
-    }
-}
-
-void row1Callback(int state, void* userdata) {
-    if (state == 1) {
-        selectedRow = 1;
-        cout << "Selected row: 1" << endl;
-    }
-}
-
-void row2Callback(int state, void* userdata) {
-    if (state == 1) {
-        selectedRow = 2;
-        cout << "Selected row: 2" << endl;
-    }
-}
-
-void row3Callback(int state, void* userdata) {
-    if (state == 1) {
-        selectedRow = 3;
-        cout << "Selected row: 3" << endl;
-    }
-}
-
-void executeCallback(int state, void* userdata) {
-    if (state == 1) {
-        commandReady = true;
-        cout << "Command ready to execute!" << endl;
-    }
-}
-
-void calibrateCallback(int state, void* userdata) {
-    if (state == 1) {
-        cout << "Calibration requested - press 'c' in main window" << endl;
-    }
-}
-
 // Function to create GUI control window
 void createGUI() {
     namedWindow("Control Panel", WINDOW_NORMAL);
-    resizeWindow("Control Panel", 400, 400);
+    resizeWindow("Control Panel", 400, 300);
     
-    // Create buttons for color selection
-    createButton("Pick: Red", redCallback, NULL, QT_PUSH_BUTTON, 0);
-    createButton("Pick: Blue", blueCallback, NULL, QT_PUSH_BUTTON, 0);
-    createButton("Pick: Green", greenCallback, NULL, QT_PUSH_BUTTON, 0);
+    // Create trackbars for selection
+    createTrackbar("Color: 0=None 1=R 2=B 3=G", "Control Panel", &selectedColor, 3);
+    createTrackbar("Row: 0=None 1-3=Row", "Control Panel", &selectedRow, 3);
     
-    // Create buttons for row selection
-    createButton("Place: Row 1", row1Callback, NULL, QT_PUSH_BUTTON, 0);
-    createButton("Place: Row 2", row2Callback, NULL, QT_PUSH_BUTTON, 0);
-    createButton("Place: Row 3", row3Callback, NULL, QT_PUSH_BUTTON, 0);
+    // Display instructions
+    Mat controlPanel = Mat::zeros(300, 400, CV_8UC3);
+    putText(controlPanel, "Control Instructions:", Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "1-3: Select Color (R/B/G)", Point(10, 70), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "4-6: Select Row (1-3)", Point(10, 100), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "Space: Execute Move", Point(10, 130), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "c: Calibrate Matrix", Point(10, 160), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "q: Quit", Point(10, 190), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
     
-    // Create confirm button
-    createButton("EXECUTE MOVE", executeCallback, NULL, QT_PUSH_BUTTON, 0);
-    
-    // Create calibration button
-    createButton("Calibrate Matrix", calibrateCallback, NULL, QT_PUSH_BUTTON, 0);
+    imshow("Control Panel", controlPanel);
 }
 
 // Function to detect color at specific coordinates and return integer code
@@ -347,7 +290,7 @@ Hole* findBlockByColor(int colorCode) {
 
 // Function to execute movement based on GUI selection
 void executeMoveFromGUI(struct sp_port* port) {
-    if (selectedColor == "None" || selectedRow == 0) {
+    if (selectedColor == 0 || selectedRow == 0) {
         cout << "Please select both color and row first!" << endl;
         return;
     }
@@ -357,18 +300,13 @@ void executeMoveFromGUI(struct sp_port* port) {
         return;
     }
 
-    // Convert color name to code
-    int colorCode = 0;
-    if (selectedColor == "Red") colorCode = 1;
-    else if (selectedColor == "Blue") colorCode = 2;
-    else if (selectedColor == "Green") colorCode = 3;
-
-    cout << "Executing move: " << selectedColor << " block to row " << selectedRow << " column 3" << endl;
+    string colorName = colorNames[selectedColor];
+    cout << "Executing move: " << colorName << " block to row " << selectedRow << " column 3" << endl;
 
     // Find the block to pick (in column 1)
-    Hole* pick_hole = findBlockByColor(colorCode);
+    Hole* pick_hole = findBlockByColor(selectedColor);
     if (!pick_hole) {
-        cout << "No " << selectedColor << " block found in column 1!" << endl;
+        cout << "No " << colorName << " block found in column 1!" << endl;
         return;
     }
 
@@ -404,7 +342,7 @@ void executeMoveFromGUI(struct sp_port* port) {
         << " (Position " << pick_hole->position_id << ")" << endl;
     cout << "Place to: R" << place_hole->row << "C" << place_hole->col
         << " (Position " << place_hole->position_id << ")" << endl;
-    cout << "Block color: " << selectedColor << endl;
+    cout << "Block color: " << colorName << endl;
 
     // Use the exact logic for command generation with row numbers
     int pick = pick_hole->row;  // Use row number (1-3)
@@ -438,8 +376,12 @@ void executeMoveFromGUI(struct sp_port* port) {
     cout << "Movement completed!" << endl;
     
     // Reset GUI selection
-    selectedColor = "None";
+    selectedColor = 0;
     selectedRow = 0;
+    
+    // Update trackbars
+    setTrackbarPos("Color: 0=None 1=R 2=B 3=G", "Control Panel", 0);
+    setTrackbarPos("Row: 0=None 1-3=Row", "Control Panel", 0);
 }
 
 int main(int argc, char* argv[])
@@ -498,7 +440,8 @@ int main(int argc, char* argv[])
                 }
                 
                 // Display current selection on live feed
-                string selectionText = "Selection: " + selectedColor + " -> Row " + to_string(selectedRow);
+                string colorName = (selectedColor > 0) ? colorNames[selectedColor] : "None";
+                string selectionText = "Selection: " + colorName + " -> Row " + to_string(selectedRow);
                 putText(liveFrame, selectionText, Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 0), 2);
             }
             else {
@@ -507,12 +450,6 @@ int main(int argc, char* argv[])
             }
 
             imshow("Live Feed", liveFrame);
-        }
-
-        // Check if command is ready from GUI
-        if (commandReady) {
-            executeMoveFromGUI(port);
-            commandReady = false;
         }
 
         int key = waitKey(30);
@@ -539,6 +476,20 @@ int main(int argc, char* argv[])
                 }
                 else {
                     cout << "Please calibrate matrix first (press 'c')" << endl;
+                }
+                break;
+
+            case '1': selectedColor = 1; cout << "Selected: Red" << endl; break;
+            case '2': selectedColor = 2; cout << "Selected: Blue" << endl; break;
+            case '3': selectedColor = 3; cout << "Selected: Green" << endl; break;
+            case '4': selectedRow = 1; cout << "Selected: Row 1" << endl; break;
+            case '5': selectedRow = 2; cout << "Selected: Row 2" << endl; break;
+            case '6': selectedRow = 3; cout << "Selected: Row 3" << endl; break;
+            case ' ': 
+                if (selectedColor > 0 && selectedRow > 0) {
+                    executeMoveFromGUI(port);
+                } else {
+                    cout << "Please select both color and row first!" << endl;
                 }
                 break;
 
