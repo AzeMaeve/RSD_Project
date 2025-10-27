@@ -55,21 +55,23 @@ map<pair<int, int>, int> positionMap = {
 // Function to create GUI control window
 void createGUI() {
     namedWindow("Control Panel", WINDOW_NORMAL);
-    resizeWindow("Control Panel", 400, 300);
-    
+    resizeWindow("Control Panel", 400, 450);
+
     // Create trackbars for selection
-    createTrackbar("Color: 0=None 1=R 2=B 3=G", "Control Panel", &selectedColor, 3);
-    createTrackbar("Row: 0=None 1-3=Row", "Control Panel", &selectedRow, 3);
-    
+    createTrackbar("Colour", "Control Panel", &selectedColor, 3);
+    createTrackbar("Row", "Control Panel", &selectedRow, 3);
+
     // Display instructions
     Mat controlPanel = Mat::zeros(300, 400, CV_8UC3);
     putText(controlPanel, "Control Instructions:", Point(10, 40), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-    putText(controlPanel, "1-3: Select Color (R/B/G)", Point(10, 70), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-    putText(controlPanel, "4-6: Select Row (1-3)", Point(10, 100), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "1-3: Select Colour (R/B/G)", Point(10, 70), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "1-3: Select Row (1-3)", Point(10, 100), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
     putText(controlPanel, "Space: Execute Move", Point(10, 130), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
     putText(controlPanel, "c: Calibrate Matrix", Point(10, 160), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-    putText(controlPanel, "q: Quit", Point(10, 190), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-    
+    putText(controlPanel, "h: Go Home", Point(10, 190), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "r: Reset (C3 -> C1)", Point(10, 220), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "q: Quit", Point(10, 250), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
+
     imshow("Control Panel", controlPanel);
 }
 
@@ -212,7 +214,7 @@ bool captureEmptyFrame(VideoCapture& cap) {
         // Assign grid positions (1-9 for 3x3 grid)
         for (size_t i = 0; i < savedHoles.size(); i++) {
             savedHoles[i].row = (i / 3) + 1;
-            savedHoles[i].col = (i % 3) + 1;
+            savedHoles[i].col = 3 - (i % 3);
             savedHoles[i].position_id = positionMap[{savedHoles[i].row, savedHoles[i].col}];
         }
 
@@ -365,7 +367,8 @@ void executeMoveFromGUI(struct sp_port* port) {
         sp_drain(port);
 
         cout << "Command reset" << endl;
-    } else {
+    }
+    else {
         cout << "Serial port not available!" << endl;
     }
 
@@ -374,14 +377,14 @@ void executeMoveFromGUI(struct sp_port* port) {
     pick_hole->colour = 0;
 
     cout << "Movement completed!" << endl;
-    
+
     // Reset GUI selection
     selectedColor = 0;
     selectedRow = 0;
-    
+
     // Update trackbars
-    setTrackbarPos("Color: 0=None 1=R 2=B 3=G", "Control Panel", 0);
-    setTrackbarPos("Row: 0=None 1-3=Row", "Control Panel", 0);
+    setTrackbarPos("Colour", "Control Panel", 0);
+    setTrackbarPos("Row", "Control Panel", 0);
 }
 
 int main(int argc, char* argv[])
@@ -404,15 +407,18 @@ int main(int argc, char* argv[])
                 sp_set_baudrate(port, BAUD);
                 sp_set_bits(port, 8);
                 cout << "Serial port initialized successfully" << endl;
-            } else {
+            }
+            else {
                 cout << "Warning: Could not open serial port" << endl;
                 port = nullptr;
             }
-        } else {
+        }
+        else {
             cout << "Warning: Could not find serial port" << endl;
             port = nullptr;
         }
-    } else {
+    }
+    else {
         cout << "Warning: No serial port specified. Running in simulation mode." << endl;
     }
 
@@ -421,6 +427,11 @@ int main(int argc, char* argv[])
 
     // Create GUI
     createGUI();
+
+    // Ensure cmd = 0 first
+    unsigned char cmd = 0;
+    sp_blocking_write(port, &cmd, 1, 100);
+
 
     while (true) {
         Mat liveFrame;
@@ -438,7 +449,7 @@ int main(int argc, char* argv[])
                     putText(liveFrame, "Matrix Calibrated - " + to_string(savedHoles.size()) + " positions",
                         Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
                 }
-                
+
                 // Display current selection on live feed
                 string colorName = (selectedColor > 0) ? colorNames[selectedColor] : "None";
                 string selectionText = "Selection: " + colorName + " -> Row " + to_string(selectedRow);
@@ -468,6 +479,22 @@ int main(int argc, char* argv[])
                 }
                 break;
 
+            case 'r': // Reset C3 to C1
+                cmd = 128;
+                sp_blocking_write(port, &cmd, 1, 100);
+                this_thread::sleep_for(milliseconds(2000));
+                cmd = 0;
+                sp_blocking_write(port, &cmd, 1, 100);
+                break;
+
+            case 'h': // Set to home
+                cmd = 64;
+                sp_blocking_write(port, &cmd, 1, 100);
+                this_thread::sleep_for(milliseconds(2000));
+                cmd = 0;
+                sp_blocking_write(port, &cmd, 1, 100);
+                break;
+
             case '0':
                 if (holesCalibrated) {
                     continuousColorDetection = !continuousColorDetection;
@@ -485,10 +512,11 @@ int main(int argc, char* argv[])
             case '4': selectedRow = 1; cout << "Selected: Row 1" << endl; break;
             case '5': selectedRow = 2; cout << "Selected: Row 2" << endl; break;
             case '6': selectedRow = 3; cout << "Selected: Row 3" << endl; break;
-            case ' ': 
+            case ' ':
                 if (selectedColor > 0 && selectedRow > 0) {
                     executeMoveFromGUI(port);
-                } else {
+                }
+                else {
                     cout << "Please select both color and row first!" << endl;
                 }
                 break;
