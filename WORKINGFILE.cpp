@@ -40,6 +40,13 @@ map<int, string> colorNames = {
     {0, "None"}
 };
 
+// Color character to color code mapping
+map<char, int> colorCharToCode = {
+    {'r', 1}, {'R', 1},
+    {'b', 2}, {'B', 2},
+    {'g', 3}, {'G', 3}
+};
+
 // Position mapping: row and column to position_id
 // Assuming 3x3 grid layout:
 // Row 1: positions 1,2,3
@@ -56,7 +63,7 @@ void printMenu() {
     cout << "1. Capture Empty Matrix" << endl;
     cout << "2. Toggle Continuous Color Detection" << endl;
     cout << "3. Print Matrix Coordinates" << endl;
-    cout << "4. Move Block (e.g., '11' = pick from row1,col1, place at row1,col3)" << endl;
+    cout << "4. Move Block (e.g., 'r1' = move Red to row1,col3, 'b2' = move Blue to row2,col3)" << endl;
     cout << "5. Print Current Layout" << endl;
     cout << "6. Routine 2" << endl;
     cout << "7. Routine 3" << endl;
@@ -313,60 +320,74 @@ int getPositionId(int row, int col) {
     return -1; // Invalid position
 }
 
+// Function to find a block of specified color in column 1
+Hole* findBlockByColor(int colorCode) {
+    for (auto& hole : savedHoles) {
+        if (hole.col == 1 && hole.colour == colorCode) {
+            return &hole;
+        }
+    }
+    return nullptr;
+}
+
 // Function to parse move command and execute movement
 void executeMoveCommand(struct sp_port* port, const string& command) {
     if (command.length() != 2) {
-        cout << "Invalid command format. Use like '11' (pick_row place_row)" << endl;
+        cout << "Invalid command format. Use like 'r1' (color row) or 'b2' (color row)" << endl;
         return;
     }
 
-    int pick_row = command[0] - '0';
-    int place_row = command[1] - '0';
+    char colorChar = command[0];
+    int target_row = command[1] - '0';
 
-    if (pick_row < 1 || pick_row > 3 || place_row < 1 || place_row > 3) {
-        cout << "Invalid row numbers. Use 1-3 for both digits." << endl;
+    // Validate inputs
+    if (colorCharToCode.find(colorChar) == colorCharToCode.end()) {
+        cout << "Invalid color. Use r/R for Red, b/B for Blue, g/G for Green" << endl;
         return;
     }
 
-    cout << "Command: Pick from row " << pick_row << " (column 1), Place at row " << place_row << " (column 3)" << endl;
-
-    // Find the pick position (row, column 1)
-    int pick_position = getPositionId(pick_row, 1);
-    int place_position = getPositionId(place_row, 3);
-
-    if (pick_position == -1 || place_position == -1) {
-        cout << "Error: Could not find positions for the given rows." << endl;
+    if (target_row < 1 || target_row > 3) {
+        cout << "Invalid row number. Use 1-3." << endl;
         return;
     }
 
-    // Find the holes
-    Hole* pick_hole = nullptr;
+    int colorCode = colorCharToCode[colorChar];
+    string colorName = colorNames[colorCode];
+
+    cout << "Command: Move " << colorName << " block to row " << target_row << " column 3" << endl;
+
+    // Find the block to pick (in column 1)
+    Hole* pick_hole = findBlockByColor(colorCode);
+    if (!pick_hole) {
+        cout << "No " << colorName << " block found in column 1!" << endl;
+        return;
+    }
+
+    // Find the place position (target row, column 3)
+    int place_position = getPositionId(target_row, 3);
+    if (place_position == -1) {
+        cout << "Error: Could not find position for row " << target_row << " column 3." << endl;
+        return;
+    }
+
+    // Find the place hole
     Hole* place_hole = nullptr;
-
     for (auto& hole : savedHoles) {
-        if (hole.position_id == pick_position) {
-            pick_hole = &hole;
-        }
         if (hole.position_id == place_position) {
             place_hole = &hole;
+            break;
         }
     }
 
-    if (!pick_hole || !place_hole) {
-        cout << "Error: Could not find holes for the specified positions." << endl;
-        return;
-    }
-
-    // Check if pick position has a block
-    if (pick_hole->colour == 0) {
-        cout << "No block found at pick position R" << pick_row << "C1!" << endl;
+    if (!place_hole) {
+        cout << "Error: Could not find hole for the specified place position." << endl;
         return;
     }
 
     // Check if place position is empty
     if (place_hole->colour != 0) {
-        cout << "Place position R" << place_row << "C3 is not empty! It contains " 
-             << colorNames[place_hole->colour] << " block." << endl;
+        cout << "Place position R" << place_hole->row << "C" << place_hole->col 
+             << " is not empty! It contains " << colorNames[place_hole->colour] << " block." << endl;
         return;
     }
 
@@ -374,12 +395,14 @@ void executeMoveCommand(struct sp_port* port, const string& command) {
          << " (Position " << pick_hole->position_id << ")" << endl;
     cout << "Place to: R" << place_hole->row << "C" << place_hole->col 
          << " (Position " << place_hole->position_id << ")" << endl;
-    cout << "Block color: " << colorNames[pick_hole->colour] << endl;
+    cout << "Block color: " << colorName << endl;
 
-    // Pack command according to the specified format
-    unsigned char cmd = (unsigned char)((((pick_hole->position_id - 1) << 4) | (place_hole->position_id - 1)) + 1);
+    // Use the exact logic you specified for command generation
+    int pick = pick_hole->position_id;
+    int place = place_hole->position_id;
+    unsigned char cmd = (unsigned char)((((pick - 1) << 4) | (place - 1)) + 1);
     
-    cout << "Sending command: " << int(cmd) << endl;
+    cout << "Generated command: pick=" << pick << ", place=" << place << ", cmd=" << int(cmd) << endl;
     
     // Send command sequence
     sp_blocking_write(port, &cmd, 1, 100);
@@ -431,7 +454,7 @@ int main(int argc, char* argv[])
 
     cout << "Robot Control System Started" << endl;
     cout << "Press '1' to capture empty matrix first" << endl;
-    cout << "Move command format: '11' = pick from row1,col1, place at row1,col3" << endl;
+    cout << "Move command format: 'r1' = move Red to row1,col3, 'b2' = move Blue to row2,col3" << endl;
     printMenu();
 
     while (true) {
@@ -490,7 +513,7 @@ int main(int argc, char* argv[])
                 break;
 
             case '4': {
-                cout << "Enter move command (e.g., '11' = pick from row1,col1, place at row1,col3): ";
+                cout << "Enter move command (e.g., 'r1' = move Red to row1,col3, 'b2' = move Blue to row2,col3): ";
                 string moveCommand;
                 cin >> moveCommand;
                 executeMoveCommand(port, moveCommand);
