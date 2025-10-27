@@ -32,14 +32,11 @@ Mat emptyFrame;
 bool emptyFrameCaptured = false;
 bool continuousColorDetection = false;
 
-// GUI state variables
-string selectedColor = "None";
-int selectedRow = 0;
-
-// Button regions
-Rect redButton, blueButton, greenButton;
-Rect row1Button, row2Button, row3Button;
-Rect executeButton, calibrateButton;
+// GUI state variables - use simple integers for stability
+int selectedColor = 0; // 0=None, 1=Red, 2=Blue, 3=Green
+int selectedRow = 0;   // 0=None, 1-3=Row number
+bool executeCommand = false;
+bool calibrateRequested = false;
 
 // Color mapping
 map<int, string> colorNames = {
@@ -56,137 +53,82 @@ map<pair<int, int>, int> positionMap = {
     {{3, 1}, 7}, {{3, 2}, 8}, {{3, 3}, 9}
 };
 
-// Mouse callback function
-void onMouse(int event, int x, int y, int flags, void* userdata) {
-    if (event == EVENT_LBUTTONDOWN) {
-        Point clickPoint(x, y);
-        
-        // Check color buttons
-        if (redButton.contains(clickPoint)) {
-            selectedColor = "Red";
-            cout << "Selected color: Red" << endl;
-        }
-        else if (blueButton.contains(clickPoint)) {
-            selectedColor = "Blue";
-            cout << "Selected color: Blue" << endl;
-        }
-        else if (greenButton.contains(clickPoint)) {
-            selectedColor = "Green";
-            cout << "Selected color: Green" << endl;
-        }
-        // Check row buttons
-        else if (row1Button.contains(clickPoint)) {
-            selectedRow = 1;
-            cout << "Selected row: 1" << endl;
-        }
-        else if (row2Button.contains(clickPoint)) {
-            selectedRow = 2;
-            cout << "Selected row: 2" << endl;
-        }
-        else if (row3Button.contains(clickPoint)) {
-            selectedRow = 3;
-            cout << "Selected row: 3" << endl;
-        }
-        // Check execute button
-        else if (executeButton.contains(clickPoint)) {
-            cout << "Execute button clicked!" << endl;
-            // This will be handled in main loop
-        }
-        // Check calibrate button
-        else if (calibrateButton.contains(clickPoint)) {
-            cout << "Calibrate button clicked!" << endl;
-            // This will be handled in main loop
-        }
-        
-        // Update GUI display
-        createGUI();
+// Simple global callback functions - no lambdas, no captures
+void redCallback(int state, void* userdata) {
+    if (state != 0) {
+        selectedColor = 1;
+        cout << "Selected: Red" << endl;
     }
 }
 
-// Function to create GUI control window with drawn buttons
+void blueCallback(int state, void* userdata) {
+    if (state != 0) {
+        selectedColor = 2;
+        cout << "Selected: Blue" << endl;
+    }
+}
+
+void greenCallback(int state, void* userdata) {
+    if (state != 0) {
+        selectedColor = 3;
+        cout << "Selected: Green" << endl;
+    }
+}
+
+void row1Callback(int state, void* userdata) {
+    if (state != 0) {
+        selectedRow = 1;
+        cout << "Selected: Row 1" << endl;
+    }
+}
+
+void row2Callback(int state, void* userdata) {
+    if (state != 0) {
+        selectedRow = 2;
+        cout << "Selected: Row 2" << endl;
+    }
+}
+
+void row3Callback(int state, void* userdata) {
+    if (state != 0) {
+        selectedRow = 3;
+        cout << "Selected: Row 3" << endl;
+    }
+}
+
+void executeCallback(int state, void* userdata) {
+    if (state != 0) {
+        executeCommand = true;
+        cout << "Execute command requested!" << endl;
+    }
+}
+
+void calibrateCallback(int state, void* userdata) {
+    if (state != 0) {
+        calibrateRequested = true;
+        cout << "Calibration requested!" << endl;
+    }
+}
+
+// Function to create GUI control window
 void createGUI() {
-    Mat controlPanel = Mat::zeros(500, 400, CV_8UC3);
-    controlPanel.setTo(Scalar(50, 50, 50)); // Dark gray background
+    // Create control window first
+    namedWindow("Control Panel", WINDOW_NORMAL);
+    resizeWindow("Control Panel", 400, 300);
     
-    // Define button regions
-    int buttonWidth = 350;
-    int buttonHeight = 40;
-    int startX = 25;
-    int startY = 20;
-    int spacing = 50;
+    // Create buttons - use simple string literals and global functions
+    createButton("Pick: Red", redCallback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Pick: Blue", blueCallback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Pick: Green", greenCallback, NULL, QT_PUSH_BUTTON, 0);
     
-    redButton = Rect(startX, startY, buttonWidth, buttonHeight);
-    blueButton = Rect(startX, startY + spacing, buttonWidth, buttonHeight);
-    greenButton = Rect(startX, startY + spacing * 2, buttonWidth, buttonHeight);
+    createButton("Place: Row 1", row1Callback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Place: Row 2", row2Callback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Place: Row 3", row3Callback, NULL, QT_PUSH_BUTTON, 0);
     
-    row1Button = Rect(startX, startY + spacing * 3, buttonWidth, buttonHeight);
-    row2Button = Rect(startX, startY + spacing * 4, buttonWidth, buttonHeight);
-    row3Button = Rect(startX, startY + spacing * 5, buttonWidth, buttonHeight);
+    createButton("EXECUTE MOVE", executeCallback, NULL, QT_PUSH_BUTTON, 0);
+    createButton("Calibrate Matrix", calibrateCallback, NULL, QT_PUSH_BUTTON, 0);
     
-    executeButton = Rect(startX, startY + spacing * 6, buttonWidth, buttonHeight);
-    calibrateButton = Rect(startX, startY + spacing * 7, buttonWidth, buttonHeight);
-    
-    // Draw buttons with different colors based on selection
-    // Color buttons
-    Scalar redColor = (selectedColor == "Red") ? Scalar(0, 0, 200) : Scalar(0, 0, 100);
-    Scalar blueColor = (selectedColor == "Blue") ? Scalar(200, 0, 0) : Scalar(100, 0, 0);
-    Scalar greenColor = (selectedColor == "Green") ? Scalar(0, 200, 0) : Scalar(0, 100, 0);
-    
-    rectangle(controlPanel, redButton, redColor, FILLED);
-    rectangle(controlPanel, blueButton, blueColor, FILLED);
-    rectangle(controlPanel, greenButton, greenColor, FILLED);
-    
-    // Row buttons
-    Scalar rowColor = Scalar(100, 100, 100);
-    Scalar selectedRowColor = Scalar(150, 150, 150);
-    
-    rectangle(controlPanel, row1Button, (selectedRow == 1) ? selectedRowColor : rowColor, FILLED);
-    rectangle(controlPanel, row2Button, (selectedRow == 2) ? selectedRowColor : rowColor, FILLED);
-    rectangle(controlPanel, row3Button, (selectedRow == 3) ? selectedRowColor : rowColor, FILLED);
-    
-    // Action buttons
-    rectangle(controlPanel, executeButton, Scalar(0, 100, 200), FILLED);
-    rectangle(controlPanel, calibrateButton, Scalar(200, 100, 0), FILLED);
-    
-    // Add button labels
-    putText(controlPanel, "PICK: RED", Point(redButton.x + 10, redButton.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    putText(controlPanel, "PICK: BLUE", Point(blueButton.x + 10, blueButton.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    putText(controlPanel, "PICK: GREEN", Point(greenButton.x + 10, greenButton.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    
-    putText(controlPanel, "PLACE: ROW 1", Point(row1Button.x + 10, row1Button.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    putText(controlPanel, "PLACE: ROW 2", Point(row2Button.x + 10, row2Button.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    putText(controlPanel, "PLACE: ROW 3", Point(row3Button.x + 10, row3Button.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    
-    putText(controlPanel, "EXECUTE MOVE", Point(executeButton.x + 10, executeButton.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    putText(controlPanel, "CALIBRATE MATRIX", Point(calibrateButton.x + 10, calibrateButton.y + 25), 
-            FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 255, 255), 2);
-    
-    // Add border to buttons
-    rectangle(controlPanel, redButton, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, blueButton, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, greenButton, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, row1Button, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, row2Button, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, row3Button, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, executeButton, Scalar(255, 255, 255), 2);
-    rectangle(controlPanel, calibrateButton, Scalar(255, 255, 255), 2);
-    
-    // Add title and status
-    putText(controlPanel, "ROBOT CONTROL PANEL", Point(10, 15), 
-            FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 0), 1);
-    
-    string status = "Selection: " + selectedColor + " -> Row " + to_string(selectedRow);
-    putText(controlPanel, status, Point(10, controlPanel.rows - 10), 
-            FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
-    
-    imshow("Control Panel", controlPanel);
+    cout << "GUI buttons created successfully!" << endl;
 }
 
 // Function to detect color at specific coordinates and return integer code
@@ -406,7 +348,7 @@ Hole* findBlockByColor(int colorCode) {
 
 // Function to execute movement based on GUI selection
 void executeMoveFromGUI(struct sp_port* port) {
-    if (selectedColor == "None" || selectedRow == 0) {
+    if (selectedColor == 0 || selectedRow == 0) {
         cout << "Please select both color and row first!" << endl;
         return;
     }
@@ -416,18 +358,13 @@ void executeMoveFromGUI(struct sp_port* port) {
         return;
     }
 
-    // Convert color name to code
-    int colorCode = 0;
-    if (selectedColor == "Red") colorCode = 1;
-    else if (selectedColor == "Blue") colorCode = 2;
-    else if (selectedColor == "Green") colorCode = 3;
-
-    cout << "Executing move: " << selectedColor << " block to row " << selectedRow << " column 3" << endl;
+    string colorName = colorNames[selectedColor];
+    cout << "Executing move: " << colorName << " block to row " << selectedRow << " column 3" << endl;
 
     // Find the block to pick (in column 1)
-    Hole* pick_hole = findBlockByColor(colorCode);
+    Hole* pick_hole = findBlockByColor(selectedColor);
     if (!pick_hole) {
-        cout << "No " << selectedColor << " block found in column 1!" << endl;
+        cout << "No " << colorName << " block found in column 1!" << endl;
         return;
     }
 
@@ -463,7 +400,7 @@ void executeMoveFromGUI(struct sp_port* port) {
         << " (Position " << pick_hole->position_id << ")" << endl;
     cout << "Place to: R" << place_hole->row << "C" << place_hole->col
         << " (Position " << place_hole->position_id << ")" << endl;
-    cout << "Block color: " << selectedColor << endl;
+    cout << "Block color: " << colorName << endl;
 
     // Use the exact logic for command generation with row numbers
     int pick = pick_hole->row;  // Use row number (1-3)
@@ -497,11 +434,8 @@ void executeMoveFromGUI(struct sp_port* port) {
     cout << "Movement completed!" << endl;
     
     // Reset GUI selection
-    selectedColor = "None";
+    selectedColor = 0;
     selectedRow = 0;
-    
-    // Update GUI
-    createGUI();
 }
 
 int main(int argc, char* argv[])
@@ -538,10 +472,7 @@ int main(int argc, char* argv[])
 
     cout << "Robot Control System Started" << endl;
 
-    // Create GUI with mouse callback
-    namedWindow("Control Panel", WINDOW_NORMAL);
-    resizeWindow("Control Panel", 400, 500);
-    setMouseCallback("Control Panel", onMouse, NULL);
+    // Create GUI - do this FIRST before any other windows
     createGUI();
 
     while (true) {
@@ -562,7 +493,8 @@ int main(int argc, char* argv[])
                 }
                 
                 // Display current selection on live feed
-                string selectionText = "Selection: " + selectedColor + " -> Row " + to_string(selectedRow);
+                string colorName = (selectedColor > 0) ? colorNames[selectedColor] : "None";
+                string selectionText = "Selection: " + colorName + " -> Row " + to_string(selectedRow);
                 putText(liveFrame, selectionText, Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 0), 2);
             }
             else {
@@ -573,11 +505,28 @@ int main(int argc, char* argv[])
             imshow("Live Feed", liveFrame);
         }
 
-        // Check for button clicks and execute commands
-        static bool executePressed = false;
-        static bool calibratePressed = false;
+        // Check for button actions
+        if (executeCommand) {
+            if (selectedColor != 0 && selectedRow != 0) {
+                executeMoveFromGUI(port);
+            } else {
+                cout << "Please select both color and row before executing!" << endl;
+            }
+            executeCommand = false;
+        }
         
-        // This is handled in the mouse callback, but we check the state here
+        if (calibrateRequested) {
+            if (captureEmptyFrame(cap)) {
+                cout << "Calibration successful!" << endl;
+                continuousColorDetection = true;
+                cout << "Continuous color detection started automatically" << endl;
+            }
+            else {
+                cout << "Calibration failed. Adjust camera/view and try again." << endl;
+            }
+            calibrateRequested = false;
+        }
+
         int key = waitKey(30);
 
         if (key != -1) {
@@ -605,12 +554,6 @@ int main(int argc, char* argv[])
                 }
                 break;
 
-            case ' ':
-                if (selectedColor != "None" && selectedRow != 0) {
-                    executeMoveFromGUI(port);
-                }
-                break;
-
             case 'q':
             case 'Q':
             case 27:
@@ -623,26 +566,6 @@ int main(int argc, char* argv[])
             default:
                 break;
             }
-        }
-        
-        // Check if execute was clicked (via mouse)
-        // We need to handle this by checking the last click
-        static Point lastClick(-1, -1);
-        if (executeButton.contains(lastClick)) {
-            if (selectedColor != "None" && selectedRow != 0) {
-                executeMoveFromGUI(port);
-            }
-            lastClick = Point(-1, -1); // Reset
-        }
-        
-        // Check if calibrate was clicked (via mouse)
-        if (calibrateButton.contains(lastClick)) {
-            if (captureEmptyFrame(cap)) {
-                cout << "Calibration successful!" << endl;
-                continuousColorDetection = true;
-                cout << "Continuous color detection started automatically" << endl;
-            }
-            lastClick = Point(-1, -1); // Reset
         }
     }
 
