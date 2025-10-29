@@ -188,7 +188,7 @@ void createControlPanel() {
         FONT_HERSHEY_SIMPLEX, 0.5, statusColor, 1);
 
     // Color selection
-    putText(controlPanel, "Select Colour (C1):", Point(20, 180),
+    putText(controlPanel, "Select Colour:", Point(20, 180),
         FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
 
     // Color buttons
@@ -203,22 +203,22 @@ void createControlPanel() {
     rectangle(controlPanel, colorGreenBtn, selectedColor == 3 ? Scalar(0, 255, 0) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, colorGreenBtn, Scalar(200, 200, 200), 1);
     putText(controlPanel, "Green", Point(245, 220), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
-
+    
     // Row selection
-    putText(controlPanel, "Select Target Row (C3):", Point(20, 240),
+    putText(controlPanel, "Select Target Location:", Point(20, 240),
         FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
 
     rectangle(controlPanel, row1Btn, selectedRow == 1 ? Scalar(100, 100, 200) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, row1Btn, Scalar(200, 200, 200), 1);
-    putText(controlPanel, "Row 1", Point(65, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "3,1", Point(65, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
     rectangle(controlPanel, row2Btn, selectedRow == 2 ? Scalar(100, 100, 200) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, row2Btn, Scalar(200, 200, 200), 1);
-    putText(controlPanel, "Row 2", Point(155, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "3,2", Point(155, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
     rectangle(controlPanel, row3Btn, selectedRow == 3 ? Scalar(100, 100, 200) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, row3Btn, Scalar(200, 200, 200), 1);
-    putText(controlPanel, "Row 3", Point(245, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
+    putText(controlPanel, "3,3", Point(245, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
     // Execute button
     bool canExecute = (selectedColor > 0 && selectedRow > 0 && holesCalibrated);
@@ -642,8 +642,8 @@ void executeReset(struct sp_port* port) {
             sp_blocking_write(port, &cmd, 1, 100);
             cout << "Command sent: " << int(cmd) << endl;
 
-            // Wait for operation to complete (8 seconds for reset movements)
-            this_thread::sleep_for(milliseconds(11000));
+            // Wait for operation to complete
+            this_thread::sleep_for(milliseconds(15000));
 
             // Send zero command
             cmd = 0;
@@ -729,8 +729,6 @@ int main(int argc, char* argv[])
             if (holesCalibrated) {
                 if (continuousColorDetection) {
                     checkHoleColorsLive(liveFrame);
-                    putText(liveFrame, "Live Colour Detection - ON",
-                        Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
                 }
                 else {
                     for (size_t i = 0; i < savedHoles.size(); i++) {
@@ -743,7 +741,7 @@ int main(int argc, char* argv[])
                 // Display current selection on live feed
                 string colorName = (selectedColor > 0) ? colorNames[selectedColor] : "None";
                 string selectionText = "Selection: " + colorName + " -> Row " + to_string(selectedRow);
-                putText(liveFrame, selectionText, Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 0), 2);
+                putText(liveFrame, selectionText, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 0), 2);
             }
             else {
                 putText(liveFrame, "Calibrate Matrix in Control Panel",
