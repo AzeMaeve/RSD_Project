@@ -261,7 +261,7 @@ void createControlPanel() {
     imshow("Control Panel", controlPanel);
 }
 
-// [Include all your existing functions here - I'll include the key ones for completeness]
+// Function to detect color at specific coordinates and return integer code
 int detectColour(Mat& original, int x, int y) {
     if (x < 0 || x >= original.cols || y < 0 || y >= original.rows) {
         return 0;
@@ -288,6 +288,7 @@ int detectColour(Mat& original, int x, int y) {
     return 0;
 }
 
+// Function to detect the largest dark object (board)
 vector<Point> detectBoard(Mat& thresholded, Mat& original) {
     vector<vector<Point>> contours;
     vector<Vec4i> hierarchy;
@@ -313,6 +314,7 @@ vector<Point> detectBoard(Mat& thresholded, Mat& original) {
     return vector<Point>();
 }
 
+// Function to detect holes within the board region
 vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
     vector<Hole> holes;
 
@@ -359,6 +361,7 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
     return holes;
 }
 
+// Function to capture and process empty frame
 bool captureEmptyFrame(VideoCapture& cap) {
     Mat frame;
     if (!cap.read(frame)) {
@@ -418,6 +421,7 @@ bool captureEmptyFrame(VideoCapture& cap) {
     }
 }
 
+// Function to check colors at saved hole positions on live feed
 void checkHoleColorsLive(Mat& liveFrame) {
     if (!holesCalibrated || savedHoles.empty()) return;
 
@@ -441,8 +445,19 @@ void checkHoleColorsLive(Mat& liveFrame) {
         putText(liveFrame, label, Point(savedHoles[i].center.x - 15, savedHoles[i].center.y + 5),
             FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
     }
+
+    static int frameCount = 0;
+    if (frameCount++ % 60 == 0) {
+        cout << "Current colors: ";
+        for (size_t i = 0; i < savedHoles.size(); i++) {
+            cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col
+                << ":" << colorNames[savedHoles[i].colour] << " ";
+        }
+        cout << endl;
+    }
 }
 
+// Function to get position_id from row and column
 int getPositionId(int row, int col) {
     auto it = positionMap.find({ row, col });
     if (it != positionMap.end()) {
@@ -451,6 +466,7 @@ int getPositionId(int row, int col) {
     return -1; // Invalid position
 }
 
+// Function to find a block of specified color in column 1
 Hole* findBlockByColor(int colorCode) {
     for (auto& hole : savedHoles) {
         if (hole.col == 1 && hole.colour == colorCode) {
@@ -460,6 +476,7 @@ Hole* findBlockByColor(int colorCode) {
     return nullptr;
 }
 
+// Function to find blocks in column 3 (for reset operation)
 vector<Hole*> findBlocksInColumn3() {
     vector<Hole*> blocks;
     for (auto& hole : savedHoles) {
@@ -470,6 +487,7 @@ vector<Hole*> findBlocksInColumn3() {
     return blocks;
 }
 
+// Function to find empty positions in column 1 (for reset operation)
 vector<Hole*> findEmptyPositionsInColumn1() {
     vector<Hole*> emptyPositions;
     for (auto& hole : savedHoles) {
@@ -480,6 +498,7 @@ vector<Hole*> findEmptyPositionsInColumn1() {
     return emptyPositions;
 }
 
+// Function to execute movement based on GUI selection
 void executeMoveFromGUI(struct sp_port* port) {
     if (selectedColor == 0 || selectedRow == 0) {
         cout << "Please select both color and row first!" << endl;
@@ -566,8 +585,13 @@ void executeMoveFromGUI(struct sp_port* port) {
     pick_hole->colour = 0;
 
     cout << "Movement completed!" << endl;
+
+    // Reset GUI selection
+    selectedColor = 0;
+    selectedRow = 0;
 }
 
+// Function to execute reset operation (move all blocks from C3 to C1)
 void executeReset(struct sp_port* port) {
     if (!holesCalibrated || savedHoles.empty()) {
         cout << "Matrix not calibrated yet!" << endl;
@@ -597,21 +621,21 @@ void executeReset(struct sp_port* port) {
         Hole* pick_hole = blocksInC3[i];
         Hole* place_hole = emptyPositionsInC1[i];
 
-        cout << "Moving block from R" << pick_hole->row << "C" << pick_hole->col 
-             << " to R" << place_hole->row << "C" << place_hole->col << endl;
+        cout << "Moving block from R" << pick_hole->row << "C" << pick_hole->col
+            << " to R" << place_hole->row << "C" << place_hole->col << endl;
         cout << "Block color: " << colorNames[pick_hole->colour] << endl;
 
         // Get the command for this specific movement
-        auto cmdIt = resetCmdMap.find({pick_hole->row, place_hole->row});
+        auto cmdIt = resetCmdMap.find({ pick_hole->row, place_hole->row });
         if (cmdIt == resetCmdMap.end()) {
-            cout << "Error: No command found for movement from R" << pick_hole->row 
-                 << " to R" << place_hole->row << endl;
+            cout << "Error: No command found for movement from R" << pick_hole->row
+                << " to R" << place_hole->row << endl;
             continue;
         }
 
         unsigned char cmd = cmdIt->second;
-        cout << "Using command: " << int(cmd) << " for C3R" << pick_hole->row 
-             << " -> C1R" << place_hole->row << endl;
+        cout << "Using command: " << int(cmd) << " for C3R" << pick_hole->row
+            << " -> C1R" << place_hole->row << endl;
 
         // Send command sequence
         if (port) {
@@ -637,15 +661,15 @@ void executeReset(struct sp_port* port) {
         pick_hole->colour = 0;
 
         cout << "Movement " << (i + 1) << " completed!" << endl;
-        
+
         // Small delay between movements
         if (i < min(blocksInC3.size(), emptyPositionsInC1.size()) - 1) {
             this_thread::sleep_for(milliseconds(1000));
         }
     }
 
-    cout << "Reset operation completed! Moved " 
-         << min(blocksInC3.size(), emptyPositionsInC1.size()) << " blocks from C3 to C1." << endl;
+    cout << "Reset operation completed! Moved "
+        << min(blocksInC3.size(), emptyPositionsInC1.size()) << " blocks from C3 to C1." << endl;
 }
 
 int main(int argc, char* argv[])
