@@ -87,7 +87,7 @@ map<pair<int, int>, unsigned char> resetCmdMap = {
 // ========================================
 
 bool captureEmptyFrame(VideoCapture& cap);
-void executeMoveFromGUI(struct sp_port* port);
+void executeMove(struct sp_port* port);
 void executeReset(struct sp_port* port);
 int getPositionId(int row, int col);
 Space* findBlockByColor(int colorCode);
@@ -146,7 +146,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
         }
         else if (executeBtn.contains(pt)) {
             cout << "Executing move..." << endl;
-            executeMoveFromGUI(port);
+            executeMove(port);
         }
         else if (resetBtn.contains(pt)) {
             cout << "Executing reset..." << endl;
@@ -509,7 +509,7 @@ vector<Space*> findEmptyPositionsInColumn1() {
 // ========================================
 
 // Executes movement based on GUI selection (color block to target row in column 3)
-void executeMoveFromGUI(struct sp_port* port) {
+void executeMove(struct sp_port* port) {
     if (selectedColor == 0 || selectedRow == 0) {
         cout << "Please select both color and row first!" << endl;
         return;
