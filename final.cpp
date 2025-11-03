@@ -30,28 +30,28 @@ vector<Space> savedSpaces;
 bool spacesCalibrated = false;
 Mat emptyFrame;
 bool emptyFrameCaptured = false;
-bool continuousColorDetection = false;
+bool continuousColourDetection = false;
 VideoCapture global_cap(0); // Global camera object
 
 // GUI state variables
-int selectedColor = 0; // 0=None, 1=Red, 2=Blue, 3=Green
+int selectedColour = 0; // 0=None, 1=Red, 2=Blue, 3=Green
 int selectedRow = 0;   // 0=None, 1-3=Row number
 
 // Button regions for mouse clicks
 Rect calibrateBtn = Rect(50, 100, 300, 50);
-Rect colorRedBtn = Rect(50, 200, 80, 30);
-Rect colorBlueBtn = Rect(140, 200, 80, 30);
-Rect colorGreenBtn = Rect(230, 200, 80, 30);
+Rect colourRedBtn = Rect(50, 200, 80, 30);
+Rect colourBlueBtn = Rect(140, 200, 80, 30);
+Rect colourGreenBtn = Rect(230, 200, 80, 30);
 Rect row1Btn = Rect(50, 250, 80, 30);
 Rect row2Btn = Rect(140, 250, 80, 30);
 Rect row3Btn = Rect(230, 250, 80, 30);
 Rect executeBtn = Rect(50, 300, 300, 50);
 Rect resetBtn = Rect(50, 370, 140, 40);
 Rect homeBtn = Rect(200, 370, 140, 40);
-Rect colorDetectionBtn = Rect(50, 450, 300, 30);
+Rect colourDetectionBtn = Rect(50, 450, 300, 30);
 
-// Color mapping
-map<int, string> colorNames = {
+// Colour mapping
+map<int, string> colourNames = {
     {1, "Red"},
     {2, "Blue"},
     {3, "Green"},
@@ -83,10 +83,10 @@ bool captureEmptyFrame(VideoCapture& cap);
 void executeMoveFromGUI(struct sp_port* port);
 void executeReset(struct sp_port* port);
 int getPositionId(int row, int col);
-Space* findBlockByColor(int colorCode);
+Space* findBlockByColour(int colourCode);
 vector<Space*> findBlocksInColumn3();
 vector<Space*> findEmptyPositionsInColumn1();
-void checkSpaceColorsLive(Mat& liveFrame);
+void checkSpaceColoursLive(Mat& liveFrame);
 int detectColour(Mat& original, int x, int y);
 vector<Point> detectBoard(Mat& thresholded, Mat& original);
 vector<Space> detectSpacesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour);
@@ -102,23 +102,23 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
             cout << "Calibrating matrix..." << endl;
             if (captureEmptyFrame(global_cap)) {
                 cout << "Calibration successful!" << endl;
-                continuousColorDetection = true;
-                cout << "Continuous color detection started automatically" << endl;
+                continuousColourDetection = true;
+                cout << "Continuous colour detection started automatically" << endl;
             }
             else {
                 cout << "Calibration failed. Adjust camera/view and try again." << endl;
             }
         }
-        else if (colorRedBtn.contains(pt)) {
-            selectedColor = 1;
+        else if (colourRedBtn.contains(pt)) {
+            selectedColour = 1;
             cout << "Selected: Red" << endl;
         }
-        else if (colorBlueBtn.contains(pt)) {
-            selectedColor = 2;
+        else if (colourBlueBtn.contains(pt)) {
+            selectedColour = 2;
             cout << "Selected: Blue" << endl;
         }
-        else if (colorGreenBtn.contains(pt)) {
-            selectedColor = 3;
+        else if (colourGreenBtn.contains(pt)) {
+            selectedColour = 3;
             cout << "Selected: Green" << endl;
         }
         else if (row1Btn.contains(pt)) {
@@ -152,10 +152,10 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
                 cout << "Home position set!" << endl;
             }
         }
-        else if (colorDetectionBtn.contains(pt)) {
+        else if (colourDetectionBtn.contains(pt)) {
             if (spacesCalibrated) {
-                continuousColorDetection = !continuousColorDetection;
-                cout << "Continuous color detection: " << (continuousColorDetection ? "ON" : "OFF") << endl;
+                continuousColourDetection = !continuousColourDetection;
+                cout << "Continuous colour detection: " << (continuousColourDetection ? "ON" : "OFF") << endl;
             }
             else {
                 cout << "Please calibrate matrix first!" << endl;
@@ -168,7 +168,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
 void createControlPanel() {
     Mat controlPanel = Mat::zeros(600, 400, CV_8UC3);
 
-    // Set background color
+    // Set background colour
     controlPanel.setTo(Scalar(60, 60, 60));
 
     // Title
@@ -183,25 +183,25 @@ void createControlPanel() {
 
     // Status
     string statusText = spacesCalibrated ? "CALIBRATED" : "NOT CALIBRATED";
-    Scalar statusColor = spacesCalibrated ? Scalar(0, 255, 0) : Scalar(0, 0, 255);
+    Scalar statusColour = spacesCalibrated ? Scalar(0, 255, 0) : Scalar(0, 0, 255);
     putText(controlPanel, statusText, Point(20, 80),
-        FONT_HERSHEY_SIMPLEX, 0.5, statusColor, 1);
+        FONT_HERSHEY_SIMPLEX, 0.5, statusColour, 1);
 
-    // Color selection
+    // Colour selection
     putText(controlPanel, "Select Colour:", Point(20, 180),
         FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
 
-    // Color buttons
-    rectangle(controlPanel, colorRedBtn, selectedColor == 1 ? Scalar(0, 0, 255) : Scalar(50, 50, 50), -1);
-    rectangle(controlPanel, colorRedBtn, Scalar(200, 200, 200), 1);
+    // Colour buttons
+    rectangle(controlPanel, colourRedBtn, selectedColour == 1 ? Scalar(0, 0, 255) : Scalar(50, 50, 50), -1);
+    rectangle(controlPanel, colourRedBtn, Scalar(200, 200, 200), 1);
     putText(controlPanel, "Red", Point(65, 220), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
-    rectangle(controlPanel, colorBlueBtn, selectedColor == 2 ? Scalar(255, 0, 0) : Scalar(50, 50, 50), -1);
-    rectangle(controlPanel, colorBlueBtn, Scalar(200, 200, 200), 1);
+    rectangle(controlPanel, colourBlueBtn, selectedColour == 2 ? Scalar(255, 0, 0) : Scalar(50, 50, 50), -1);
+    rectangle(controlPanel, colourBlueBtn, Scalar(200, 200, 200), 1);
     putText(controlPanel, "Blue", Point(155, 220), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
-    rectangle(controlPanel, colorGreenBtn, selectedColor == 3 ? Scalar(0, 255, 0) : Scalar(50, 50, 50), -1);
-    rectangle(controlPanel, colorGreenBtn, Scalar(200, 200, 200), 1);
+    rectangle(controlPanel, colourGreenBtn, selectedColour == 3 ? Scalar(0, 255, 0) : Scalar(50, 50, 50), -1);
+    rectangle(controlPanel, colourGreenBtn, Scalar(200, 200, 200), 1);
     putText(controlPanel, "Green", Point(245, 220), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
     
     // Row selection
@@ -221,14 +221,14 @@ void createControlPanel() {
     putText(controlPanel, "3,3", Point(245, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
     // Execute button
-    bool canExecute = (selectedColor > 0 && selectedRow > 0 && spacesCalibrated);
+    bool canExecute = (selectedColour > 0 && selectedRow > 0 && spacesCalibrated);
     rectangle(controlPanel, executeBtn, canExecute ? Scalar(0, 100, 0) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, executeBtn, Scalar(200, 200, 200), 2);
     putText(controlPanel, "EXECUTE MOVE", Point(80, 330),
         FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
 
     // Current selection display
-    string selectionText = "Current: " + colorNames[selectedColor] + " -> Row " + to_string(selectedRow);
+    string selectionText = "Current: " + colourNames[selectedColour] + " -> Row " + to_string(selectedRow);
     putText(controlPanel, selectionText, Point(20, 360),
         FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 0), 1);
 
@@ -241,10 +241,10 @@ void createControlPanel() {
     rectangle(controlPanel, homeBtn, Scalar(200, 200, 200), 1);
     putText(controlPanel, "HOME", Point(230, 395), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
-    // Color detection toggle
-    rectangle(controlPanel, colorDetectionBtn, continuousColorDetection ? Scalar(0, 100, 0) : Scalar(50, 50, 50), -1);
-    rectangle(controlPanel, colorDetectionBtn, Scalar(200, 200, 200), 1);
-    string detectionText = continuousColorDetection ? "Color Detection: ON" : "Color Detection: OFF";
+    // Colour detection toggle
+    rectangle(controlPanel, colourDetectionBtn, continuousColourDetection ? Scalar(0, 100, 0) : Scalar(50, 50, 50), -1);
+    rectangle(controlPanel, colourDetectionBtn, Scalar(200, 200, 200), 1);
+    string detectionText = continuousColourDetection ? "Colour Detection: ON" : "Colour Detection: OFF";
     putText(controlPanel, detectionText, Point(60, 470),
         FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
@@ -261,14 +261,14 @@ void createControlPanel() {
     imshow("Control Panel", controlPanel);
 }
 
-// Function to detect color at specific coordinates and return integer code
+// Function to detect colour at specific coordinates and return integer code
 int detectColour(Mat& original, int x, int y) {
     if (x < 0 || x >= original.cols || y < 0 || y >= original.rows) {
         return 0;
     }
 
     Mat hsv;
-    cvtColor(original, hsv, COLOR_BGR2HSV);
+    cvtColour(original, hsv, COLOR_BGR2HSV);
 
     Vec3b pixel = hsv.at<Vec3b>(y, x);
     int hue = pixel[0];
@@ -375,7 +375,7 @@ bool captureEmptyFrame(VideoCapture& cap) {
     cout << "Empty frame captured! Processing spaces..." << endl;
 
     Mat imgHSV;
-    cvtColor(emptyFrame, imgHSV, COLOR_BGR2HSV);
+    cvtColour(emptyFrame, imgHSV, COLOR_BGR2HSV);
 
     Mat imgThresholded;
     inRange(imgHSV, Scalar(0, 0, 0), Scalar(179, 255, 100), imgThresholded);
@@ -421,24 +421,24 @@ bool captureEmptyFrame(VideoCapture& cap) {
     }
 }
 
-// Function to check colors at saved space positions on live feed
-void checkSpaceColorsLive(Mat& liveFrame) {
+// Function to check colours at saved space positions on live feed
+void checkSpaceColoursLive(Mat& liveFrame) {
     if (!spacesCalibrated || savedSpaces.empty()) return;
 
     for (size_t i = 0; i < savedSpaces.size(); i++) {
-        int colorResult = detectColour(liveFrame, savedSpaces[i].center.x, savedSpaces[i].center.y);
-        savedSpaces[i].colour = colorResult;
+        int colourResult = detectColour(liveFrame, savedSpaces[i].center.x, savedSpaces[i].center.y);
+        savedSpaces[i].colour = colourResult;
 
-        Scalar color;
-        string colorText;
-        switch (colorResult) {
-        case 1: color = Scalar(0, 0, 255); colorText = "R"; break;
-        case 2: color = Scalar(255, 0, 0); colorText = "B"; break;
-        case 3: color = Scalar(0, 255, 0); colorText = "G"; break;
-        default: color = Scalar(128, 128, 128); colorText = "N"; break;
+        Scalar colour;
+        string colourText;
+        switch (colourResult) {
+        case 1: colour = Scalar(0, 0, 255); colourText = "R"; break;
+        case 2: colour = Scalar(255, 0, 0); colourText = "B"; break;
+        case 3: colour = Scalar(0, 255, 0); colourText = "G"; break;
+        default: colour = Scalar(128, 128, 128); colourText = "N"; break;
         }
 
-        circle(liveFrame, savedSpaces[i].center, 15, color, -1);
+        circle(liveFrame, savedSpaces[i].center, 15, colour, -1);
         circle(liveFrame, savedSpaces[i].center, 15, Scalar(255, 255, 255), 2);
 
         string label = to_string(savedSpaces[i].row) + "," + to_string(savedSpaces[i].col);
@@ -451,7 +451,7 @@ void checkSpaceColorsLive(Mat& liveFrame) {
     //    cout << "Current colours: ";
     //    for (size_t i = 0; i < savedSpaces.size(); i++) {
     //        cout << "R" << savedSpaces[i].row << "C" << savedSpaces[i].col
-    //            << ":" << colorNames[savedSpaces[i].colour] << " ";
+    //            << ":" << colourNames[savedSpaces[i].colour] << " ";
     //    }
     //    cout << endl;
     //}
@@ -466,10 +466,10 @@ int getPositionId(int row, int col) {
     return -1; // Invalid position
 }
 
-// Function to find a block of specified color in column 1
-Space* findBlockByColor(int colorCode) {
+// Function to find a block of specified colour in column 1
+Space* findBlockByColour(int colourCode) {
     for (auto& space : savedSpaces) {
-        if (space.col == 1 && space.colour == colorCode) {
+        if (space.col == 1 && space.colour == colourCode) {
             return &space;
         }
     }
@@ -500,8 +500,8 @@ vector<Space*> findEmptyPositionsInColumn1() {
 
 // Function to execute movement based on GUI selection
 void executeMoveFromGUI(struct sp_port* port) {
-    if (selectedColor == 0 || selectedRow == 0) {
-        cout << "Please select both color and row first!" << endl;
+    if (selectedColour == 0 || selectedRow == 0) {
+        cout << "Please select both colour and row first!" << endl;
         return;
     }
 
@@ -510,13 +510,13 @@ void executeMoveFromGUI(struct sp_port* port) {
         return;
     }
 
-    string colorName = colorNames[selectedColor];
-    cout << "Executing move: " << colorName << " block to row " << selectedRow << " column 3" << endl;
+    string colourName = colourNames[selectedColour];
+    cout << "Executing move: " << colourName << " block to row " << selectedRow << " column 3" << endl;
 
     // Find the block to pick (in column 1)
-    Space* pick_space = findBlockByColor(selectedColor);
+    Space* pick_space = findBlockByColour(selectedColour);
     if (!pick_space) {
-        cout << "No " << colorName << " block found in column 1!" << endl;
+        cout << "No " << colourName << " block found in column 1!" << endl;
         return;
     }
 
@@ -544,7 +544,7 @@ void executeMoveFromGUI(struct sp_port* port) {
     // Check if place position is empty
     if (place_space->colour != 0) {
         cout << "Place position R" << place_space->row << "C" << place_space->col
-            << " is not empty! It contains " << colorNames[place_space->colour] << " block." << endl;
+            << " is not empty! It contains " << colourNames[place_space->colour] << " block." << endl;
         return;
     }
 
@@ -552,7 +552,7 @@ void executeMoveFromGUI(struct sp_port* port) {
         << " (Position " << pick_space->position_id << ")" << endl;
     cout << "Place to: R" << place_space->row << "C" << place_space->col
         << " (Position " << place_space->position_id << ")" << endl;
-    cout << "Block color: " << colorName << endl;
+    cout << "Block colour: " << colourName << endl;
 
     // Use the exact logic for command generation with row numbers
     int pick = pick_space->row;  // Use row number (1-3)
@@ -587,7 +587,7 @@ void executeMoveFromGUI(struct sp_port* port) {
     cout << "Movement completed!" << endl;
 
     // Reset GUI selection
-    selectedColor = 0;
+    selectedColour = 0;
     selectedRow = 0;
 }
 
@@ -623,7 +623,7 @@ void executeReset(struct sp_port* port) {
 
         cout << "Moving block from R" << pick_space->row << "C" << pick_space->col
             << " to R" << place_space->row << "C" << place_space->col << endl;
-        cout << "Block color: " << colorNames[pick_space->colour] << endl;
+        cout << "Block colour: " << colourNames[pick_space->colour] << endl;
 
         // Get the command for this specific movement
         auto cmdIt = resetCmdMap.find({ pick_space->row, place_space->row });
@@ -727,8 +727,8 @@ int main(int argc, char* argv[])
         Mat liveFrame;
         if (global_cap.read(liveFrame)) {
             if (spacesCalibrated) {
-                if (continuousColorDetection) {
-                    checkSpaceColorsLive(liveFrame);
+                if (continuousColourDetection) {
+                    checkSpaceColoursLive(liveFrame);
                 }
                 else {
                     for (size_t i = 0; i < savedSpaces.size(); i++) {
@@ -739,8 +739,8 @@ int main(int argc, char* argv[])
                 }
 
                 // Display current selection on live feed
-                string colorName = (selectedColor > 0) ? colorNames[selectedColor] : "None";
-                string selectionText = "Selection: " + colorName + " -> Row " + to_string(selectedRow);
+                string colourName = (selectedColour > 0) ? colourNames[selectedColour] : "None";
+                string selectionText = "Selection: " + colourName + " -> Row " + to_string(selectedRow);
                 putText(liveFrame, selectionText, Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 0), 2);
             }
             else {
