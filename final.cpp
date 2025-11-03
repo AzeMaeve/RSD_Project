@@ -15,8 +15,8 @@ using namespace cv;
 using namespace std;
 using namespace std::chrono;
 
-// Structure to store hole information
-struct Hole {
+// Structure to store space information
+struct Space {
     Point2f center;
     double area;
     int colour;
@@ -26,8 +26,8 @@ struct Hole {
 };
 
 // Global variables
-vector<Hole> savedHoles;
-bool holesCalibrated = false;
+vector<Space> savedSpaces;
+bool spacesCalibrated = false;
 Mat emptyFrame;
 bool emptyFrameCaptured = false;
 bool continuousColorDetection = false;
@@ -83,13 +83,13 @@ bool captureEmptyFrame(VideoCapture& cap);
 void executeMoveFromGUI(struct sp_port* port);
 void executeReset(struct sp_port* port);
 int getPositionId(int row, int col);
-Hole* findBlockByColor(int colorCode);
-vector<Hole*> findBlocksInColumn3();
-vector<Hole*> findEmptyPositionsInColumn1();
-void checkHoleColorsLive(Mat& liveFrame);
+Space* findBlockByColor(int colorCode);
+vector<Space*> findBlocksInColumn3();
+vector<Space*> findEmptyPositionsInColumn1();
+void checkSpaceColorsLive(Mat& liveFrame);
 int detectColour(Mat& original, int x, int y);
 vector<Point> detectBoard(Mat& thresholded, Mat& original);
-vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour);
+vector<Space> detectSpacesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour);
 
 // Mouse callback for control panel
 void onMouse(int event, int x, int y, int flags, void* userdata) {
@@ -153,7 +153,7 @@ void onMouse(int event, int x, int y, int flags, void* userdata) {
             }
         }
         else if (colorDetectionBtn.contains(pt)) {
-            if (holesCalibrated) {
+            if (spacesCalibrated) {
                 continuousColorDetection = !continuousColorDetection;
                 cout << "Continuous color detection: " << (continuousColorDetection ? "ON" : "OFF") << endl;
             }
@@ -182,8 +182,8 @@ void createControlPanel() {
         FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 1);
 
     // Status
-    string statusText = holesCalibrated ? "CALIBRATED" : "NOT CALIBRATED";
-    Scalar statusColor = holesCalibrated ? Scalar(0, 255, 0) : Scalar(0, 0, 255);
+    string statusText = spacesCalibrated ? "CALIBRATED" : "NOT CALIBRATED";
+    Scalar statusColor = spacesCalibrated ? Scalar(0, 255, 0) : Scalar(0, 0, 255);
     putText(controlPanel, statusText, Point(20, 80),
         FONT_HERSHEY_SIMPLEX, 0.5, statusColor, 1);
 
@@ -221,7 +221,7 @@ void createControlPanel() {
     putText(controlPanel, "3,3", Point(245, 270), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
     // Execute button
-    bool canExecute = (selectedColor > 0 && selectedRow > 0 && holesCalibrated);
+    bool canExecute = (selectedColor > 0 && selectedRow > 0 && spacesCalibrated);
     rectangle(controlPanel, executeBtn, canExecute ? Scalar(0, 100, 0) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, executeBtn, Scalar(200, 200, 200), 2);
     putText(controlPanel, "EXECUTE MOVE", Point(80, 330),
@@ -233,7 +233,7 @@ void createControlPanel() {
         FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 0), 1);
 
     // Special commands
-    rectangle(controlPanel, resetBtn, holesCalibrated ? Scalar(0, 0, 100) : Scalar(50, 50, 50), -1);
+    rectangle(controlPanel, resetBtn, spacesCalibrated ? Scalar(0, 0, 100) : Scalar(50, 50, 50), -1);
     rectangle(controlPanel, resetBtn, Scalar(200, 200, 200), 1);
     putText(controlPanel, "RESET", Point(70, 395), FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
 
@@ -314,11 +314,11 @@ vector<Point> detectBoard(Mat& thresholded, Mat& original) {
     return vector<Point>();
 }
 
-// Function to detect holes within the board region
-vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
-    vector<Hole> holes;
+// Function to detect spaces within the board region
+vector<Space> detectSpacesInBoard(Mat& thresholded, Mat& original, const vector<Point>& boardContour) {
+    vector<Space> spaces;
 
-    if (boardContour.empty()) return holes;
+    if (boardContour.empty()) return spaces;
 
     Mat boardMask = Mat::zeros(thresholded.size(), CV_8UC1);
     vector<vector<Point>> boardContours = { boardContour };
@@ -327,11 +327,11 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
     vector<vector<Point>> contours;
     vector<Vec4i> hierarchy;
 
-    Mat holesImage;
-    bitwise_not(thresholded, holesImage);
-    bitwise_and(holesImage, boardMask, holesImage);
+    Mat spacesImage;
+    bitwise_not(thresholded, spacesImage);
+    bitwise_and(spacesImage, boardMask, spacesImage);
 
-    findContours(holesImage, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+    findContours(spacesImage, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
     for (size_t i = 0; i < contours.size(); i++) {
         double area = contourArea(contours[i]);
@@ -349,16 +349,16 @@ vector<Hole> detectHolesInBoard(Mat& thresholded, Mat& original, const vector<Po
             }
 
             if (circularity > 0.5) {
-                Hole hole;
-                hole.center = center;
-                hole.area = area;
-                hole.colour = 0;
-                holes.push_back(hole);
+                Space space;
+                space.center = center;
+                space.area = area;
+                space.colour = 0;
+                spaces.push_back(space);
             }
         }
     }
 
-    return holes;
+    return spaces;
 }
 
 // Function to capture and process empty frame
@@ -372,7 +372,7 @@ bool captureEmptyFrame(VideoCapture& cap) {
     emptyFrame = frame.clone();
     emptyFrameCaptured = true;
 
-    cout << "Empty frame captured! Processing holes..." << endl;
+    cout << "Empty frame captured! Processing spaces..." << endl;
 
     Mat imgHSV;
     cvtColor(emptyFrame, imgHSV, COLOR_BGR2HSV);
@@ -385,49 +385,49 @@ bool captureEmptyFrame(VideoCapture& cap) {
     morphologyEx(imgThresholded, imgThresholded, MORPH_OPEN, kernel);
 
     vector<Point> boardContour = detectBoard(imgThresholded, emptyFrame);
-    savedHoles = detectHolesInBoard(imgThresholded, emptyFrame, boardContour);
+    savedSpaces = detectSpacesInBoard(imgThresholded, emptyFrame, boardContour);
 
-    if (!savedHoles.empty()) {
-        holesCalibrated = true;
-        cout << "Successfully detected " << savedHoles.size() << " holes!" << endl;
+    if (!savedSpaces.empty()) {
+        spacesCalibrated = true;
+        cout << "Successfully detected " << savedSpaces.size() << " spaces!" << endl;
 
-        // Sort holes by position (left to right, top to bottom)
-        sort(savedHoles.begin(), savedHoles.end(), [](const Hole& a, const Hole& b) {
+        // Sort spaces by position (left to right, top to bottom)
+        sort(savedSpaces.begin(), savedSpaces.end(), [](const Space& a, const Space& b) {
             if (a.center.y == b.center.y) return a.center.x < b.center.x;
             return a.center.y < b.center.y;
             });
 
         // Assign grid positions (1-9 for 3x3 grid)
-        for (size_t i = 0; i < savedHoles.size(); i++) {
-            savedHoles[i].row = (i / 3) + 1;
-            savedHoles[i].col = 3 - (i % 3);
-            savedHoles[i].position_id = positionMap[{savedHoles[i].row, savedHoles[i].col}];
+        for (size_t i = 0; i < savedSpaces.size(); i++) {
+            savedSpaces[i].row = (i / 3) + 1;
+            savedSpaces[i].col = 3 - (i % 3);
+            savedSpaces[i].position_id = positionMap[{savedSpaces[i].row, savedSpaces[i].col}];
         }
 
-        for (size_t i = 0; i < savedHoles.size(); i++) {
-            circle(emptyFrame, savedHoles[i].center, 8, Scalar(0, 255, 0), 2);
-            string label = to_string(savedHoles[i].row) + "," + to_string(savedHoles[i].col) +
-                " (" + to_string(savedHoles[i].position_id) + ")";
-            putText(emptyFrame, label, Point(savedHoles[i].center.x + 10, savedHoles[i].center.y),
+        for (size_t i = 0; i < savedSpaces.size(); i++) {
+            circle(emptyFrame, savedSpaces[i].center, 8, Scalar(0, 255, 0), 2);
+            string label = to_string(savedSpaces[i].row) + "," + to_string(savedSpaces[i].col) +
+                " (" + to_string(savedSpaces[i].position_id) + ")";
+            putText(emptyFrame, label, Point(savedSpaces[i].center.x + 10, savedSpaces[i].center.y),
                 FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0), 2);
         }
 
-        //imshow("Empty Frame with Holes", emptyFrame);
+        //imshow("Empty Frame with Spaces", emptyFrame);
         return true;
     }
     else {
-        cout << "No holes detected in empty frame!" << endl;
+        cout << "No spaces detected in empty frame!" << endl;
         return false;
     }
 }
 
-// Function to check colors at saved hole positions on live feed
-void checkHoleColorsLive(Mat& liveFrame) {
-    if (!holesCalibrated || savedHoles.empty()) return;
+// Function to check colors at saved space positions on live feed
+void checkSpaceColorsLive(Mat& liveFrame) {
+    if (!spacesCalibrated || savedSpaces.empty()) return;
 
-    for (size_t i = 0; i < savedHoles.size(); i++) {
-        int colorResult = detectColour(liveFrame, savedHoles[i].center.x, savedHoles[i].center.y);
-        savedHoles[i].colour = colorResult;
+    for (size_t i = 0; i < savedSpaces.size(); i++) {
+        int colorResult = detectColour(liveFrame, savedSpaces[i].center.x, savedSpaces[i].center.y);
+        savedSpaces[i].colour = colorResult;
 
         Scalar color;
         string colorText;
@@ -438,20 +438,20 @@ void checkHoleColorsLive(Mat& liveFrame) {
         default: color = Scalar(128, 128, 128); colorText = "N"; break;
         }
 
-        circle(liveFrame, savedHoles[i].center, 15, color, -1);
-        circle(liveFrame, savedHoles[i].center, 15, Scalar(255, 255, 255), 2);
+        circle(liveFrame, savedSpaces[i].center, 15, color, -1);
+        circle(liveFrame, savedSpaces[i].center, 15, Scalar(255, 255, 255), 2);
 
-        string label = to_string(savedHoles[i].row) + "," + to_string(savedHoles[i].col);
-        putText(liveFrame, label, Point(savedHoles[i].center.x - 10, savedHoles[i].center.y + 5),
+        string label = to_string(savedSpaces[i].row) + "," + to_string(savedSpaces[i].col);
+        putText(liveFrame, label, Point(savedSpaces[i].center.x - 10, savedSpaces[i].center.y + 5),
             FONT_HERSHEY_SIMPLEX, 0.4, Scalar(255, 255, 255), 1);
     }
 
     static int frameCount = 0;
     //if (frameCount++ % 60 == 0) {
     //    cout << "Current colours: ";
-    //    for (size_t i = 0; i < savedHoles.size(); i++) {
-    //        cout << "R" << savedHoles[i].row << "C" << savedHoles[i].col
-    //            << ":" << colorNames[savedHoles[i].colour] << " ";
+    //    for (size_t i = 0; i < savedSpaces.size(); i++) {
+    //        cout << "R" << savedSpaces[i].row << "C" << savedSpaces[i].col
+    //            << ":" << colorNames[savedSpaces[i].colour] << " ";
     //    }
     //    cout << endl;
     //}
@@ -467,32 +467,32 @@ int getPositionId(int row, int col) {
 }
 
 // Function to find a block of specified color in column 1
-Hole* findBlockByColor(int colorCode) {
-    for (auto& hole : savedHoles) {
-        if (hole.col == 1 && hole.colour == colorCode) {
-            return &hole;
+Space* findBlockByColor(int colorCode) {
+    for (auto& space : savedSpaces) {
+        if (space.col == 1 && space.colour == colorCode) {
+            return &space;
         }
     }
     return nullptr;
 }
 
 // Function to find blocks in column 3 (for reset operation)
-vector<Hole*> findBlocksInColumn3() {
-    vector<Hole*> blocks;
-    for (auto& hole : savedHoles) {
-        if (hole.col == 3 && hole.colour != 0) {
-            blocks.push_back(&hole);
+vector<Space*> findBlocksInColumn3() {
+    vector<Space*> blocks;
+    for (auto& space : savedSpaces) {
+        if (space.col == 3 && space.colour != 0) {
+            blocks.push_back(&space);
         }
     }
     return blocks;
 }
 
 // Function to find empty positions in column 1 (for reset operation)
-vector<Hole*> findEmptyPositionsInColumn1() {
-    vector<Hole*> emptyPositions;
-    for (auto& hole : savedHoles) {
-        if (hole.col == 1 && hole.colour == 0) {
-            emptyPositions.push_back(&hole);
+vector<Space*> findEmptyPositionsInColumn1() {
+    vector<Space*> emptyPositions;
+    for (auto& space : savedSpaces) {
+        if (space.col == 1 && space.colour == 0) {
+            emptyPositions.push_back(&space);
         }
     }
     return emptyPositions;
@@ -505,7 +505,7 @@ void executeMoveFromGUI(struct sp_port* port) {
         return;
     }
 
-    if (!holesCalibrated || savedHoles.empty()) {
+    if (!spacesCalibrated || savedSpaces.empty()) {
         cout << "Matrix not calibrated yet!" << endl;
         return;
     }
@@ -514,8 +514,8 @@ void executeMoveFromGUI(struct sp_port* port) {
     cout << "Executing move: " << colorName << " block to row " << selectedRow << " column 3" << endl;
 
     // Find the block to pick (in column 1)
-    Hole* pick_hole = findBlockByColor(selectedColor);
-    if (!pick_hole) {
+    Space* pick_space = findBlockByColor(selectedColor);
+    if (!pick_space) {
         cout << "No " << colorName << " block found in column 1!" << endl;
         return;
     }
@@ -527,36 +527,36 @@ void executeMoveFromGUI(struct sp_port* port) {
         return;
     }
 
-    // Find the place hole
-    Hole* place_hole = nullptr;
-    for (auto& hole : savedHoles) {
-        if (hole.position_id == place_position) {
-            place_hole = &hole;
+    // Find the place space
+    Space* place_space = nullptr;
+    for (auto& space : savedSpaces) {
+        if (space.position_id == place_position) {
+            place_space = &space;
             break;
         }
     }
 
-    if (!place_hole) {
-        cout << "Error: Could not find hole for the specified place position." << endl;
+    if (!place_space) {
+        cout << "Error: Could not find space for the specified place position." << endl;
         return;
     }
 
     // Check if place position is empty
-    if (place_hole->colour != 0) {
-        cout << "Place position R" << place_hole->row << "C" << place_hole->col
-            << " is not empty! It contains " << colorNames[place_hole->colour] << " block." << endl;
+    if (place_space->colour != 0) {
+        cout << "Place position R" << place_space->row << "C" << place_space->col
+            << " is not empty! It contains " << colorNames[place_space->colour] << " block." << endl;
         return;
     }
 
-    cout << "Pick from: R" << pick_hole->row << "C" << pick_hole->col
-        << " (Position " << pick_hole->position_id << ")" << endl;
-    cout << "Place to: R" << place_hole->row << "C" << place_hole->col
-        << " (Position " << place_hole->position_id << ")" << endl;
+    cout << "Pick from: R" << pick_space->row << "C" << pick_space->col
+        << " (Position " << pick_space->position_id << ")" << endl;
+    cout << "Place to: R" << place_space->row << "C" << place_space->col
+        << " (Position " << place_space->position_id << ")" << endl;
     cout << "Block color: " << colorName << endl;
 
     // Use the exact logic for command generation with row numbers
-    int pick = pick_hole->row;  // Use row number (1-3)
-    int place = place_hole->row; // Use row number (1-3)
+    int pick = pick_space->row;  // Use row number (1-3)
+    int place = place_space->row; // Use row number (1-3)
     unsigned char cmd = (unsigned char)((((pick - 1) << 4) | (place - 1)) + 1);
 
     cout << "Generated command: pick_row=" << pick << ", place_row=" << place << ", cmd=" << int(cmd) << endl;
@@ -581,8 +581,8 @@ void executeMoveFromGUI(struct sp_port* port) {
     }
 
     // Update the board state (simulate movement)
-    place_hole->colour = pick_hole->colour;
-    pick_hole->colour = 0;
+    place_space->colour = pick_space->colour;
+    pick_space->colour = 0;
 
     cout << "Movement completed!" << endl;
 
@@ -593,14 +593,14 @@ void executeMoveFromGUI(struct sp_port* port) {
 
 // Function to execute reset operation (move all blocks from C3 to C1)
 void executeReset(struct sp_port* port) {
-    if (!holesCalibrated || savedHoles.empty()) {
+    if (!spacesCalibrated || savedSpaces.empty()) {
         cout << "Matrix not calibrated yet!" << endl;
         return;
     }
 
     // Find blocks in column 3 and empty positions in column 1
-    vector<Hole*> blocksInC3 = findBlocksInColumn3();
-    vector<Hole*> emptyPositionsInC1 = findEmptyPositionsInColumn1();
+    vector<Space*> blocksInC3 = findBlocksInColumn3();
+    vector<Space*> emptyPositionsInC1 = findEmptyPositionsInColumn1();
 
     if (blocksInC3.empty()) {
         cout << "No blocks found in column 3 to reset!" << endl;
@@ -618,24 +618,24 @@ void executeReset(struct sp_port* port) {
 
     // Move blocks from C3 to C1
     for (size_t i = 0; i < min(blocksInC3.size(), emptyPositionsInC1.size()); i++) {
-        Hole* pick_hole = blocksInC3[i];
-        Hole* place_hole = emptyPositionsInC1[i];
+        Space* pick_space = blocksInC3[i];
+        Space* place_space = emptyPositionsInC1[i];
 
-        cout << "Moving block from R" << pick_hole->row << "C" << pick_hole->col
-            << " to R" << place_hole->row << "C" << place_hole->col << endl;
-        cout << "Block color: " << colorNames[pick_hole->colour] << endl;
+        cout << "Moving block from R" << pick_space->row << "C" << pick_space->col
+            << " to R" << place_space->row << "C" << place_space->col << endl;
+        cout << "Block color: " << colorNames[pick_space->colour] << endl;
 
         // Get the command for this specific movement
-        auto cmdIt = resetCmdMap.find({ pick_hole->row, place_hole->row });
+        auto cmdIt = resetCmdMap.find({ pick_space->row, place_space->row });
         if (cmdIt == resetCmdMap.end()) {
-            cout << "Error: No command found for movement from R" << pick_hole->row
-                << " to R" << place_hole->row << endl;
+            cout << "Error: No command found for movement from R" << pick_space->row
+                << " to R" << place_space->row << endl;
             continue;
         }
 
         unsigned char cmd = cmdIt->second;
-        cout << "Using command: " << int(cmd) << " for C3R" << pick_hole->row
-            << " -> C1R" << place_hole->row << endl;
+        cout << "Using command: " << int(cmd) << " for C3R" << pick_space->row
+            << " -> C1R" << place_space->row << endl;
 
         // Send command sequence
         if (port) {
@@ -657,8 +657,8 @@ void executeReset(struct sp_port* port) {
         }
 
         // Update the board state (simulate movement)
-        place_hole->colour = pick_hole->colour;
-        pick_hole->colour = 0;
+        place_space->colour = pick_space->colour;
+        pick_space->colour = 0;
 
         cout << "Movement " << (i + 1) << " completed!" << endl;
 
@@ -726,15 +726,15 @@ int main(int argc, char* argv[])
     while (true) {
         Mat liveFrame;
         if (global_cap.read(liveFrame)) {
-            if (holesCalibrated) {
+            if (spacesCalibrated) {
                 if (continuousColorDetection) {
-                    checkHoleColorsLive(liveFrame);
+                    checkSpaceColorsLive(liveFrame);
                 }
                 else {
-                    for (size_t i = 0; i < savedHoles.size(); i++) {
-                        circle(liveFrame, savedHoles[i].center, 5, Scalar(0, 255, 0), 2);
+                    for (size_t i = 0; i < savedSpaces.size(); i++) {
+                        circle(liveFrame, savedSpaces[i].center, 5, Scalar(0, 255, 0), 2);
                     }
-                    putText(liveFrame, "Matrix Calibrated - " + to_string(savedHoles.size()) + " positions",
+                    putText(liveFrame, "Matrix Calibrated - " + to_string(savedSpaces.size()) + " positions",
                         Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
                 }
 
