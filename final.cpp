@@ -504,7 +504,6 @@ void executeMove(struct sp_port* port) {
         cout << "Please select both colour and row first!" << endl;
         return;
     }
-
     if (!spacesCalibrated || savedSpaces.empty()) {
         cout << "Matrix not calibrated yet!" << endl;
         return;
@@ -519,14 +518,13 @@ void executeMove(struct sp_port* port) {
         cout << "No " << colourName << " block found in column 1!" << endl;
         return;
     }
-
+    
     // Find the place position (target row, column 3)
     int place_position = getPositionId(selectedRow, 3);
     if (place_position == -1) {
         cout << "Error: Could not find position for row " << selectedRow << " column 3." << endl;
         return;
     }
-
     // Find the place space
     Space* place_space = nullptr;
     for (auto& space : savedSpaces) {
@@ -554,9 +552,9 @@ void executeMove(struct sp_port* port) {
         << " (Position " << place_space->position_id << ")" << endl;
     cout << "Block colour: " << colourName << endl;
 
-    // Use the exact logic for command generation with row numbers
     int pick = pick_space->row;  // Use row number (1-3)
     int place = place_space->row; // Use row number (1-3)
+    // Use some binary calculation to calculate the value to send
     unsigned char cmd = (unsigned char)((((pick - 1) << 4) | (place - 1)) + 1);
 
     cout << "Generated command: pick_row=" << pick << ", place_row=" << place << ", cmd=" << int(cmd) << endl;
